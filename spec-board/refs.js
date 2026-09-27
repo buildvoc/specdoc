@@ -10,6 +10,11 @@ function implementsRefs (message, scannedRepo) {
     const ns = m[1].includes('/') ? m[1].slice(0, m[1].indexOf('#')) : scannedRepo
     refs.push({ ns, n: Number(m[2]) })
   }
+  // HedgeDoc 2 / unnumbered specs use their stable SpecDoc note id.
+  // Example: implements spec:z5pky7x6z7znf33knfgn6f8wm8
+  for (const m of message.matchAll(/\bimplements\s+spec:([A-Za-z0-9_-]+)/gi)) {
+    refs.push({ noteId: m[1] })
+  }
   return refs
 }
 

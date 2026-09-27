@@ -28,7 +28,9 @@ function implementsLog (repo) {
   const out = []
   for (let i = 0; i + 3 < fields.length; i += 4) {
     const [sha, subject, body, files] = fields.slice(i, i + 4)
-    const refs = implementsRefs(`${subject}\n${body}`, origin).filter(r => r.ns).map(r => ({ ...r, label: `${r.ns}#${r.n}` }))
+    const refs = implementsRefs(`${subject}\n${body}`, origin)
+      .filter(r => r.ns || r.noteId)
+      .map(r => ({ ...r, label: r.noteId || `${r.ns}#${r.n}` }))
     if (!refs.length) continue
     out.push({ sha, subject, refs, files: files.split('\n').map(f => f.trim()).filter(Boolean) })
   }
@@ -50,7 +52,11 @@ class Trace {
   }
 
   forSpec (s) {
-    return s.pr ? this.commits.filter(c => c.refs.some(r => r.ns === s.namespace && r.n === s.pr)) : []
+    if (s.pr) {
+      return this.commits.filter(c => c.refs.some(r => r.ns === s.namespace && r.n === s.pr))
+    }
+    if (!s.id) return []
+    return this.commits.filter(c => c.refs.some(r => r.noteId === s.id))
   }
 
   forFile (file) {
@@ -58,7 +64,7 @@ class Trace {
   }
 
   namespaces () {
-    return [...new Set(this.commits.flatMap(c => c.refs.map(r => r.ns)))]
+    return [...new Set(this.commits.flatMap(c => c.refs.map(r => r.ns).filter(Boolean)))]
   }
 }
 

@@ -240,7 +240,10 @@ class Context {
     if (r.type === 'spec') {
       const s = r.s
       const commits = this.log.forSpec(s)
-      if (!commits.length) return `trace: no commit in this checkout says "implements ${s.namespace}#${s.pr || '?'}"`
+      if (!commits.length) {
+        const ref = s.pr ? `${s.namespace}#${s.pr}` : `spec:${s.id}`
+        return `trace: no commit in this checkout says "implements ${ref}"`
+      }
       for (const c of commits) {
         lines.push(commitLine(c))
         for (const f of c.files) {
