@@ -1,36 +1,68 @@
-# specdoc
+# SpecDoc
 
-<img src="docs/mascot.png" alt="specdoc mascot" width="140" align="right">
+SpecDoc generates technical specifications from source repositories using PocketFlow, publishes them to HedgeDoc 2, and presents them through SpecBoard.
 
-spec collaboration and lifecycling that isn't terrible.
+## Architecture
 
-specs usually rot in a docs platform nobody reviews or a PR nobody can edit
-together. specdoc uses [hedgedoc](https://hedgedoc.org) under the hood. specs
-are collaborative markdown notes with inline criticmarkup comments, reviewed
-on a kanban board, and finally created as PRs in their target repo once approved.
+Source repository
+→ PocketFlow
+→ Generated specifications
+→ HedgeDoc 2
+→ SpecDoc adapter
+→ SpecBoard
 
-![spec board with draft, review, and approved lanes](docs/board.png)
+## Components
 
-![editor with criticmarkup suggestions and margin comments](docs/editor.png)
+- `pocketflow/` — specification generation
+- `specifications/` — generated specification corpus
+- `hd2-adapter/` — HedgeDoc 2 compatibility API
+- `hd2-board/` — SpecBoard web application
+- `publish-specs.sh` — publishes specifications to HedgeDoc
+- `refresh-specdoc.sh` — command-line refresh workflow
+- `refresh-specdoc-board.sh` — board-triggered refresh workflow
+- `ROADMAP.md` — feature roadmap
 
-## workflow
+## Runtime
 
-a note becomes a spec via frontmatter `tags: [spec, <status>]` with statuses
-`draft`, `ready-for-review`, `in-review`, `approved`, `implemented`.
-reviewers and quorum come from `.specs/roles.yml` in the branch-protected
-target repo. a comment thread starts the review; approval needs quorum plus
-every thread resolved, then the board locks the note and opens
-`specs/NNN-slug.md` as a PR. a commit containing `implements #N` closes the
-loop.
+- HedgeDoc 2: `http://192.168.1.142:8180`
+- SpecBoard: `http://192.168.1.142:8080`
+- Adapter: `http://127.0.0.1:8081`
 
-full walkthrough: [spec lifecycle](docs/spec-lifecycle.md). adding a repo:
-[onboarding a project](docs/onboarding.md). coding agents read specs and
-the code that implements them through the
-[mcp server](docs/context-graph.md) in `mcp/`.
+## Refresh
 
-## license
+Run:
 
-AGPL-3.0 (see [LICENSE](LICENSE)); the editor is a hedgedoc derivative and
-keeps its license. `editor/critic.bundle` holds the fork's commits over the
-upstream base tag. bundled source sans pro fonts are SIL OFL 1.1
-([spec-board/fonts/LICENSE](spec-board/fonts/LICENSE)).
+`/data/projects/specdoc/refresh-specdoc.sh`
+
+SpecBoard can also trigger a refresh for a selected source path.
+
+## GitHub Issues
+
+Repository:
+
+`https://github.com/buildvoc/specdoc`
+
+## MCP
+
+The previous MCP implementation is retired and is not part of the active runtime.
+
+<!-- specdoc-board-repositories -->
+## Board repository management
+
+The SpecDoc Board supports repository management directly from the Board UI.
+
+- **+ Repository** accepts a GitHub repository URL in the form `https://github.com/owner/repo`.
+- G3 validates the remote before cloning.
+- Existing checkouts under `/data/projects` are detected by their Git `origin` and reused.
+- New repositories are normally cloned to `/data/projects/<repo>`.
+- If that path is already occupied by a different repository, the fallback path is `/data/projects/<owner>-<repo>`.
+- **Repositories** shows all immediate Git repositories discovered under `/data/projects`.
+- Repository metadata is synchronized to `/data/projects/specdoc/hd2-board/data/repositories.json`.
+
+Board API:
+
+- `POST /api/repo-add`
+- `GET /api/repositories`
+
+The Board service is `specdoc-hd2-board.service`.
+<!-- /specdoc-board-repositories -->
