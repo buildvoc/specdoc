@@ -1,0 +1,82 @@
+{
+  "projects": {
+    "buildvoc/PIC2BIM": {
+      "aliasPrefix": "buildvoc-pic2bim",
+      "branch": null,
+      "commit": "ab00a78b2731234f53b1b3a46629f1c33c59f307",
+      "githubRepo": "buildvoc/PIC2BIM",
+      "lastRefresh": "2026-10-03T15:26:07.378677+00:00",
+      "namespace": "buildvoc/PIC2BIM",
+      "outputDir": "/data/projects/specdoc/specifications/buildvoc/pic2bim",
+      "remote": "https://github.com/buildvoc/PIC2BIM.git",
+      "sourcePath": "/data/projects/pic2bim"
+    },
+    "buildvoc/PIC2BIM-IOS": {
+      "aliasPrefix": "buildvoc-pic2bim-ios",
+      "branch": "main",
+      "commit": "4e7c9bcfba7df8155d94f4605417840d327ba3c6",
+      "githubRepo": "buildvoc/PIC2BIM-IOS",
+      "lastRefresh": "2026-10-04T06:54:05.098206+00:00",
+      "namespace": "buildvoc/PIC2BIM-IOS",
+      "outputDir": "/data/projects/specdoc/specifications/buildvoc/pic2bim-ios",
+      "remote": "https://github.com/buildvoc/PIC2BIM-IOS.git",
+      "sourcePath": "/data/projects/PIC2BIM-IOS"
+    },
+    "buildvoc/PIC2BIMAndroid": {
+      "aliasPrefix": "buildvoc-pic2bimandroid",
+      "branch": "main",
+      "commit": "57ef0ed6401025ec514352ff693c9f2bc4107d3d",
+      "githubRepo": "buildvoc/PIC2BIMAndroid",
+      "lastRefresh": "2026-10-03T15:49:26.691012+00:00",
+      "namespace": "buildvoc/PIC2BIMAndroid",
+      "outputDir": "/data/projects/specdoc/specifications/buildvoc/pic2bimandroid",
+      "remote": "https://github.com/buildvoc/PIC2BIMAndroid.git",
+      "sourcePath": "/data/projects/PIC2BIMAndroid"
+    },
+    "buildvoc/combined-codebase": {
+      "aliasPrefix": "buildvoc-combined-codebase",
+      "branch": "master",
+      "commit": "43ed4ff2690f7641f521594bda6d38370d3f3a04",
+      "githubRepo": "buildvoc/combined-codebase",
+      "lastRefresh": "2026-10-03T16:48:14.595846+00:00",
+      "namespace": "buildvoc/combined-codebase",
+      "outputDir": "/data/projects/specdoc/specifications/buildvoc/combined-codebase",
+      "remote": "https://github.com/buildvoc/combined-codebase.git",
+      "sourcePath": "/data/projects/specdoc/.combined-codepaths/buildvoc--combined-codebase"
+    },
+    "buildvoc/hedgedoc": {
+      "aliasPrefix": "buildvoc-hedgedoc",
+      "branch": "snapshot/memex-v6-20260920-084010",
+      "commit": "987270e653ba4ab9276be4b05d3ad9f17f211e63",
+      "githubRepo": "buildvoc/hedgedoc",
+      "lastRefresh": "2026-09-29T09:03:52.501892+00:00",
+      "namespace": "buildvoc/hedgedoc",
+      "outputDir": "/data/projects/specdoc/specifications/buildvoc/hedgedoc",
+      "remote": "https://github.com/buildvoc/hedgedoc.git",
+      "sourcePath": "/data/projects/hedgedoc"
+    },
+    "buildvoc/hedgedoc-nb": {
+      "aliasPrefix": "buildvoc-hedgedoc-nb",
+      "branch": "main",
+      "commit": "e9553bcfef4bb3cc81657054b2e7f0f17cc45e87",
+      "githubRepo": "buildvoc/hedgedoc-nb",
+      "lastRefresh": "2026-10-03T06:21:29.704730+00:00",
+      "namespace": "buildvoc/hedgedoc-nb",
+      "outputDir": "/data/projects/specdoc/specifications/buildvoc/hedgedoc-nb",
+      "remote": "https://github.com/buildvoc/hedgedoc-nb.git",
+      "sourcePath": "/data/projects/hedgedoc-nb-frontend"
+    },
+    "buildvoc/specdoc": {
+      "aliasPrefix": "specdoc",
+      "branch": "hd2-compat",
+      "commit": "1bed98ab1cb30891d122fac4a12c3cacb7c61b4e",
+      "githubRepo": "buildvoc/specdoc",
+      "lastRefresh": "2026-10-04T10:33:21.269526+00:00",
+      "namespace": "buildvoc/specdoc",
+      "outputDir": "/data/projects/specdoc/specifications/buildvoc/specdoc",
+      "remote": "https://github.com/buildvoc/specdoc.git",
+      "sourcePath": "/data/projects/specdoc"
+    }
+  },
+  "version": 1
+}

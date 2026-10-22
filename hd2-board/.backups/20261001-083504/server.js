@@ -1,0 +1,1671 @@
+#!/usr/bin/env node
+'use strict'
+
+const fs = require('fs')
+const http = require('http')
+const path = require('path')
+const crypto = require('crypto')
+const { spawn, execFileSync } = require('child_process')
+const { scanCritic, resolvedText, escapeCriticText, SUGGESTION_TYPES, RESOLVED_MARK } = require('./critic-markup')
+
+const ROOT = path.resolve(__dirname, '..')
+const ENV_FILE = process.env.SPECDOC_ENV_FILE || path.join(ROOT, '.env')
+
+function loadEnvFile (file) {
+  try {
+    const text = fs.readFileSync(file, 'utf8')
+    for (const raw of text.split(/\r?\n/)) {
+      const line = raw.trim()
+      if (!line || line.startsWith('#')) continue
+      const m = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line)
+      if (!m || process.env[m[1]] != null) continue
+      let value = m[2].trim()
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1)
+      process.env[m[1]] = value
+    }
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw e
+  }
+}
+
+loadEnvFile(ENV_FILE)
+
+const HOST = process.env.SPECDOC_BOARD_HOST || '0.0.0.0'
+const PORT = Number(process.env.SPECDOC_BOARD_PORT || 8080)
+const SOURCE = String(process.env.SPECDOC_BOARD_SOURCE || process.env.SPECDOC_URL || 'http://127.0.0.1:8081').replace(/\/$/, '')
+const PUBLIC_ONLY = String(process.env.SPECDOC_BOARD_PUBLIC_ONLY || 'true').toLowerCase() !== 'false'
+const TITLE = process.env.SPECDOC_BOARD_TITLE || 'SpecDoc'
+const CACHE_SECONDS = Math.max(1, Number(process.env.SPECDOC_BOARD_CACHE_SECONDS || 10))
+const FETCH_TIMEOUT_MS = Math.max(1000, Number(process.env.SPECDOC_BOARD_FETCH_TIMEOUT_MS || 10000))
+
+const GH = '/data/projects/github-cli/bin/gh'
+const GITHUB_REPO = 'buildvoc/specdoc'
+const REGISTRY_FILE = path.join(ROOT, 'projects', 'registry.json')
+const GH_ENV = {
+  ...process.env,
+  HOME: process.env.HOME || '/home/hp',
+  GH_CONFIG_DIR: '/home/hp/.config/gh'
+}
+
+function projectForNamespace (namespace) {
+  const ns = String(namespace || '').trim()
+  if (!ns || ns === 'local/specs') {
+    return { namespace: 'local/specs', repo: GITHUB_REPO, sourcePath: ROOT }
+  }
+
+  try {
+    const registry = JSON.parse(fs.readFileSync(REGISTRY_FILE, 'utf8'))
+    const project = registry.projects && registry.projects[ns]
+    if (project) {
+      const repo = String(project.githubRepo || '').trim()
+      if (!repo) throw new Error(`Project ${ns} has no githubRepo`)
+      return {
+        namespace: ns,
+        repo,
+        sourcePath: String(project.sourcePath || ROOT)
+      }
+    }
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw e
+  }
+
+  throw new Error(`Unknown project namespace: ${ns}`)
+}
+
+function ghRun (args) {
+  return execFileSync(GH, args, {
+    encoding: 'utf8',
+    env: GH_ENV,
+    timeout: 20000,
+    maxBuffer: 1024 * 1024
+  }).trim()
+}
+
+function loadIssues (repo, state = 'open') {
+  const value = ghRun([
+    'issue', 'list',
+    '--repo', repo,
+    '--state', state,
+    '--limit', '50',
+    '--json', 'number,title,state,url,createdAt,updatedAt'
+  ])
+
+  return value ? JSON.parse(value) : []
+}
+
+
+const LLM_STATE_FILE = path.join(ROOT, 'llm-review', 'state.json')
+
+function readLlmState () {
+  try {
+    const value = JSON.parse(fs.readFileSync(LLM_STATE_FILE, 'utf8'))
+    return value && typeof value === 'object' ? value : {}
+  } catch (e) {
+    if (e.code !== 'ENOENT') console.error(`LLM state read failed: ${e.message}`)
+    return {}
+  }
+}
+
+function writeLlmState (state) {
+  fs.mkdirSync(path.dirname(LLM_STATE_FILE), { recursive: true })
+  const tmp = `${LLM_STATE_FILE}.${process.pid}.tmp`
+  fs.writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`)
+  fs.renameSync(tmp, LLM_STATE_FILE)
+}
+
+function llmTaskId (specId, raw, ordinal) {
+  return crypto.createHash('sha256').update(`${specId}\n${ordinal}\n${raw}`).digest('hex').slice(0, 20)
+}
+
+function llmInstruction (message) {
+  const text = String(message || '').trim()
+  const match = /(?:^|\s)@llm\b[:\s-]*(.*)$/i.exec(text)
+  return match ? String(match[1] || '').trim() : ''
+}
+
+function llmActionFromInstruction (instruction) {
+  const match = /^\s*(milestone|bug|fix|feat|feature)\s*:\s*/i.exec(instruction)
+  if (!match) return 'feature'
+  const value = match[1].toLowerCase()
+  if (value === 'milestone') return 'milestone'
+  if (value === 'bug' || value === 'fix') return 'bug'
+  return 'feature'
+}
+
+function stripLlmActionPrefix (instruction) {
+  return String(instruction || '').replace(/^\s*(milestone|bug|fix|feat|feature)\s*:\s*/i, '').trim()
+}
+
+async function collectLlmTasks (namespace = '') {
+  const data = await loadSpecs(true)
+  const state = readLlmState()
+  let stateChanged = false
+  const selectedNamespace = String(namespace || '').trim()
+  const tasks = []
+
+  for (const summary of data.specs) {
+    if (selectedNamespace && summary.namespace !== selectedNamespace) continue
+
+    let spec
+    try {
+      spec = await loadCriticSpec(summary.id)
+    } catch (e) {
+      console.error(`@llm task scan failed for ${summary.id}: ${e.message}`)
+      continue
+    }
+
+    const spans = scanCritic(spec.body || '')
+    for (let spanIndex = 0; spanIndex < spans.length; spanIndex++) {
+      const span = spans[spanIndex]
+      if (span.type !== 'comment' || span.resolved) continue
+
+      const messages = Array.isArray(span.messages) && span.messages.length
+        ? span.messages
+        : [{ author: '', text: span.content || '' }]
+
+      for (let messageIndex = 0; messageIndex < messages.length; messageIndex++) {
+        const instructionRaw = llmInstruction(messages[messageIndex] && messages[messageIndex].text)
+        if (!instructionRaw) continue
+
+        const legacyOrdinal = spanIndex * 1000 + messageIndex
+        const legacyId = llmTaskId(summary.id, span.raw || instructionRaw, legacyOrdinal)
+        const ordinal = messageIndex
+        const stableText = String((messages[messageIndex] && messages[messageIndex].text) || instructionRaw)
+        const id = llmTaskId(summary.id, stableText, ordinal)
+        if (!state[id] && state[legacyId]) {
+          state[id] = state[legacyId]
+          stateChanged = true
+        }
+        const record = state[id] || {}
+        if (record.status === 'dismissed' || record.status === 'completed') continue
+
+        const project = projectForNamespace(summary.namespace)
+        const action = record.action || llmActionFromInstruction(instructionRaw)
+        const instruction = stripLlmActionPrefix(instructionRaw)
+        const defaultTitle = (`${action === 'bug' ? 'Fix' : action === 'milestone' ? 'Milestone' : 'Feature'}: ${instruction || summary.title}`)
+          .replace(/\s+/g, ' ')
+          .slice(0, 160)
+
+        tasks.push({
+          id,
+          status: record.status || 'pending-approval',
+          action,
+          instruction,
+          title: record.title || defaultTitle,
+          githubUrl: record.githubUrl || null,
+          approvedAt: record.approvedAt || null,
+          specId: summary.id,
+          specTitle: summary.title || summary.id,
+          namespace: summary.namespace || '',
+          projectName: summary.projectName || summary.namespace || '',
+          repo: project.repo,
+          sourcePath: project.sourcePath,
+          line: span.line || null
+        })
+      }
+    }
+  }
+
+  if (stateChanged) writeLlmState(state)
+  return tasks
+}
+
+async function findLlmTask (id) {
+  const tasks = await collectLlmTasks('')
+  return tasks.find(task => task.id === id) || null
+}
+
+function createApprovedLlmGithubWork (task, input) {
+  const project = projectForNamespace(task.namespace)
+  const action = ['bug', 'feature', 'milestone'].includes(String(input.action || ''))
+    ? String(input.action)
+    : task.action
+  const title = String(input.title || task.title || '').trim().slice(0, 200)
+  const description = String(input.description || task.instruction || '').trim()
+
+  if (!title) throw new Error('title is required')
+  if (!description) throw new Error('description is required')
+
+  if (action === 'milestone') {
+    const raw = ghRun([
+      'api', '--method', 'POST', `repos/${project.repo}/milestones`,
+      '-f', `title=${title}`, '-f', `description=${description}`
+    ])
+    const created = JSON.parse(raw)
+    return { action, title, url: created.html_url || `https://github.com/${project.repo}/milestones` }
+  }
+
+  const body = [
+    '## @llm task', '', description, '', '## SpecDoc context', '',
+    '- Human approved: yes',
+    `- Task type: ${action}`,
+    `- Specification: ${task.specTitle}`,
+    `- Spec ID: ${task.specId}`,
+    `- Namespace: ${task.namespace}`,
+    `- Repository: ${project.repo}`,
+    `- Source path: ${project.sourcePath}`,
+    task.line ? `- Review line: ${task.line}` : null,
+    '', '> Created only after explicit human approval in SpecBoard.'
+  ].filter(value => value != null).join('\n')
+
+  const result = ghRun(['issue', 'create', '--repo', project.repo, '--title', title, '--body', body])
+  const url = result.split(/\r?\n/).find(line => line.startsWith('https://github.com/')) || result
+  return { action, title, url }
+}
+
+const STATUSES = [
+  ['draft', 'Draft'],
+  ['ready-for-review', 'Ready for review'],
+  ['in-review', 'In review'],
+  ['approved', 'Approved'],
+  ['implemented', 'Implemented']
+]
+
+if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw new Error('SPECDOC_BOARD_PORT must be 1..65535')
+
+let cache = { expires: 0, at: null, specs: [] }
+
+const REFRESH_SCRIPT = path.join(ROOT, 'refresh-specdoc-board.sh')
+const REFRESH_LOG = path.join(ROOT, 'logs', 'specdoc-refresh.log')
+const REFRESH_STATE = path.join(ROOT, 'logs', 'specdoc-refresh.state')
+const REFRESH_HISTORY = path.join(ROOT, 'logs', 'specdoc-refresh-history.log')
+let refreshPid = null
+
+function esc (value) {
+  return String(value == null ? '' : value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+async function sourceJson (pathname) {
+  const res = await fetch(`${SOURCE}${pathname}`, {
+    headers: { accept: 'application/json' },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+  })
+  const text = await res.text()
+  if (!res.ok) throw new Error(`adapter ${pathname}: HTTP ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`)
+  return text ? JSON.parse(text) : null
+}
+
+async function sourcePostJson (pathname, payload) {
+  const res = await fetch(`${SOURCE}${pathname}`, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+  })
+  const text = await res.text()
+  let data = null
+  try { data = text ? JSON.parse(text) : null } catch {}
+  if (!res.ok) {
+    const message = data && data.error ? data.error : (text ? text.slice(0, 240) : `HTTP ${res.status}`)
+    const error = new Error(message)
+    error.statusCode = res.status
+    throw error
+  }
+  return data
+}
+
+async function loadCriticSpec (id) {
+  const data = await sourceJson(`/api/specs/${encodeURIComponent(id)}`)
+  const spec = data && data.spec ? data.spec : data
+  if (!spec || typeof spec.body !== 'string') throw new Error('adapter did not return specification body')
+  return spec
+}
+
+function criticOrdinal (spans, index) {
+  let ordinal = 0
+  for (let i = 0; i < index; i++) {
+    if (spans[i].raw === spans[index].raw) ordinal++
+  }
+  return ordinal
+}
+
+function criticReviewPayload (spec) {
+  const spans = scanCritic(spec.body || '')
+  const review = []
+
+  spans.forEach((span, index) => {
+    if (span.type !== 'comment' && !SUGGESTION_TYPES.includes(span.type)) return
+    review.push({
+      type: span.type,
+      raw: span.raw,
+      ordinal: criticOrdinal(spans, index),
+      line: span.line || null,
+      endLine: span.endLine || null,
+      resolved: !!span.resolved,
+      messages: Array.isArray(span.messages) ? span.messages : [],
+      content: span.content || '',
+      oldText: span.oldText || '',
+      newText: span.newText || ''
+    })
+  })
+
+  return {
+    id: spec.id,
+    title: spec.title || spec.id,
+    review
+  }
+}
+
+function contextualReplacement (text, span, replacement) {
+  const widths = [0, 40, 120, 400, 1200, text.length]
+
+  for (const width of widths) {
+    const start = Math.max(0, span.from - width)
+    const end = Math.min(text.length, span.to + width)
+    const oldText = text.slice(start, end)
+
+    if (!oldText) continue
+    if (text.indexOf(oldText) !== text.lastIndexOf(oldText)) continue
+
+    const newText =
+      text.slice(start, span.from) +
+      replacement +
+      text.slice(span.to, end)
+
+    return { oldText, newText }
+  }
+
+  throw new Error('CriticMarkup span is ambiguous')
+}
+
+async function applyCriticAction (id, input) {
+  const spec = await loadCriticSpec(id)
+  const text = spec.body
+  const spans = scanCritic(text)
+  const raw = String(input.raw || '')
+  const ordinal = Math.max(0, Number(input.ordinal) || 0)
+  const matches = spans.filter(span => span.raw === raw)
+  const span = matches[ordinal]
+
+  if (!span) {
+    const error = new Error('Review changed; reload the review panel')
+    error.statusCode = 409
+    throw error
+  }
+
+  const action = String(input.action || '')
+  let replacement
+
+  if (action === 'reply') {
+    if (span.type !== 'comment') {
+      const error = new Error('Replies apply only to comments')
+      error.statusCode = 400
+      throw error
+    }
+    const reply = String(input.text || '').trim()
+    if (!reply) {
+      const error = new Error('Reply is required')
+      error.statusCode = 400
+      throw error
+    }
+    if (reply.length > 4000) {
+      const error = new Error('Reply is too long')
+      error.statusCode = 400
+      throw error
+    }
+    replacement = span.raw + `{>>${escapeCriticText(reply)}<<}`
+  } else if (action === 'resolve') {
+    if (span.type !== 'comment') {
+      const error = new Error('Resolve applies only to comments')
+      error.statusCode = 400
+      throw error
+    }
+    if (span.resolved) return { ok: true, unchanged: true }
+    replacement = span.raw + `{>>${RESOLVED_MARK}<<}`
+  } else if (action === 'accept' || action === 'reject') {
+    if (!SUGGESTION_TYPES.includes(span.type)) {
+      const error = new Error('Accept/reject applies only to insert/delete/substitute suggestions')
+      error.statusCode = 400
+      throw error
+    }
+    replacement = resolvedText(span, action === 'accept')
+  } else {
+    const error = new Error('Unknown review action')
+    error.statusCode = 400
+    throw error
+  }
+
+  const change = contextualReplacement(text, span, replacement)
+  await sourcePostJson(`/api/specs/${encodeURIComponent(id)}/update`, {
+    old_text: change.oldText,
+    new_text: change.newText
+  })
+
+  cache.expires = 0
+  return { ok: true }
+}
+
+async function loadSpecs (fresh = false) {
+  if (!fresh && Date.now() < cache.expires) return cache
+  const data = await sourceJson(`/api/specs${PUBLIC_ONLY ? '?public=true' : ''}`)
+  if (!data || !Array.isArray(data.specs)) throw new Error('adapter returned an invalid /api/specs response')
+  cache = {
+    expires: Date.now() + CACHE_SECONDS * 1000,
+    at: data.at || new Date().toISOString(),
+    specs: data.specs
+  }
+  return cache
+}
+
+function filterSpecs (specs, params) {
+  const q = String(params.get('q') || '').trim().toLowerCase()
+  const status = String(params.get('status') || '').trim()
+  const ns = String(params.get('ns') || '').trim()
+  return specs.filter(spec => {
+    if (status && spec.status !== status) return false
+    if (ns && spec.namespace !== ns) return false
+    if (!q) return true
+    const haystack = [spec.title, spec.abstract, spec.author, spec.namespace, ...(spec.tags || [])].join(' ').toLowerCase()
+    return q.split(/\s+/).every(word => haystack.includes(word))
+  })
+}
+
+function relativeTime (value) {
+  const when = new Date(value).getTime()
+  if (!Number.isFinite(when)) return ''
+  const seconds = Math.max(0, Math.floor((Date.now() - when) / 1000))
+  if (seconds < 60) return `${seconds}s ago`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 48) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
+
+function pidAlive (pid) {
+  if (!pid) return false
+  try {
+    process.kill(Number(pid), 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function detectRefreshPid () {
+  if (refreshPid && pidAlive(refreshPid)) return refreshPid
+
+  try {
+    const out = execFileSync(
+      '/usr/bin/pgrep',
+      ['-f', 'bash /data/projects/specdoc/refresh-specdoc(-board)?\\.sh'],
+      { encoding: 'utf8' }
+    ).trim()
+
+    for (const value of out.split(/\s+/)) {
+      const pid = Number(value)
+      if (pid && pid !== process.pid && pidAlive(pid)) {
+        refreshPid = pid
+        return pid
+      }
+    }
+  } catch {}
+
+  refreshPid = null
+  return null
+}
+
+function refreshRunning () {
+  return Boolean(detectRefreshPid())
+}
+
+function processElapsed (pid) {
+  try {
+    const value = execFileSync(
+      '/usr/bin/ps',
+      ['-o', 'etimes=', '-p', String(pid)],
+      { encoding: 'utf8' }
+    ).trim()
+    return Math.max(0, Number(value) || 0)
+  } catch {
+    return 0
+  }
+}
+
+function processStage (pid) {
+  try {
+    const value = execFileSync(
+      '/usr/bin/pgrep',
+      ['-a', '-P', String(pid)],
+      { encoding: 'utf8' }
+    )
+
+    if (/main\.py/.test(value)) return ['PocketFlow · generating specifications', 10]
+    if (/git_changes\.py/.test(value)) return ['Git · describing repository changes', 78]
+    if (/publish-specs\.sh/.test(value)) return ['HedgeDoc · publishing specifications', 88]
+  } catch {}
+
+  return ['Refresh running', 5]
+}
+
+function expectedRefreshSeconds (source) {
+  try {
+    const lines = fs.readFileSync(REFRESH_HISTORY, 'utf8')
+      .trim()
+      .split(/\r?\n/)
+      .filter(Boolean)
+
+    let values = lines
+      .map(line => line.split('\t'))
+      .filter(parts => parts.length >= 2 && (!source || parts.slice(1).join('\t') === source))
+      .map(parts => Number(parts[0]))
+      .filter(value => Number.isFinite(value) && value > 0)
+
+    if (!values.length) {
+      values = lines
+        .map(line => Number(line.split('\t')[0]))
+        .filter(value => Number.isFinite(value) && value > 0)
+    }
+
+    values = values.slice(-5)
+    if (values.length) return Math.round(values.reduce((a, b) => a + b, 0) / values.length)
+  } catch {}
+
+  return 900
+}
+
+function readRefreshState () {
+  try {
+    const parts = fs.readFileSync(REFRESH_STATE, 'utf8').trim().split('\t')
+    if (parts.length >= 8) {
+      return {
+        status: parts[0],
+        pid: Number(parts[1]) || null,
+        started: Number(parts[2]) || 0,
+        phase: parts[3],
+        baseProgress: Number(parts[4]) || 0,
+        source: parts[5],
+        ended: Number(parts[6]) || 0,
+        exitCode: Number(parts[7]) || 0
+      }
+    }
+  } catch {}
+  return null
+}
+
+function refreshStatus () {
+  const state = readRefreshState()
+  const detectedPid = detectRefreshPid()
+
+  if (state && state.status === 'running' && pidAlive(state.pid)) {
+    const now = Math.floor(Date.now() / 1000)
+    const elapsed = Math.max(0, now - state.started)
+    const expected = expectedRefreshSeconds(state.source)
+    let progress = state.baseProgress
+
+    if (/PocketFlow/.test(state.phase)) {
+      progress = Math.max(10, Math.min(74, Math.round((elapsed / expected) * 75)))
+    }
+
+    return {
+      status: 'running',
+      pid: state.pid,
+      phase: state.phase,
+      progress,
+      elapsedSeconds: elapsed,
+      etaSeconds: elapsed < expected ? expected - elapsed : null,
+      overEstimate: elapsed >= expected,
+      source: state.source
+    }
+  }
+
+  // Detect a refresh that started before this progress system was installed.
+  if (detectedPid) {
+    const elapsed = processElapsed(detectedPid)
+    const [phase, baseProgress] = processStage(detectedPid)
+    const expected = expectedRefreshSeconds(null)
+    let progress = baseProgress
+
+    if (/PocketFlow/.test(phase)) {
+      progress = Math.max(10, Math.min(74, Math.round((elapsed / expected) * 75)))
+    }
+
+    return {
+      status: 'running',
+      pid: detectedPid,
+      phase,
+      progress,
+      elapsedSeconds: elapsed,
+      etaSeconds: elapsed < expected ? expected - elapsed : null,
+      overEstimate: elapsed >= expected,
+      source: null
+    }
+  }
+
+  if (state && (state.status === 'complete' || state.status === 'failed')) {
+    return {
+      status: state.status,
+      pid: state.pid,
+      phase: state.phase,
+      progress: state.status === 'complete' ? 100 : state.baseProgress,
+      elapsedSeconds: state.ended && state.started ? Math.max(0, state.ended - state.started) : 0,
+      etaSeconds: 0,
+      source: state.source,
+      exitCode: state.exitCode
+    }
+  }
+
+  return {
+    status: 'idle',
+    phase: 'Idle',
+    progress: 0,
+    elapsedSeconds: 0,
+    etaSeconds: null
+  }
+}
+
+function reviewCommentsHtml (spec) {
+  const comments = Number(spec.comments || 0)
+  const suggestions = Number(spec.suggestions || 0)
+  if (!comments && !suggestions) return ''
+
+  const parts = []
+  if (comments) parts.push(`${comments} comment${comments === 1 ? '' : 's'}`)
+  if (suggestions) parts.push(`${suggestions} suggestion${suggestions === 1 ? '' : 's'}`)
+
+  return `<details class="review-comments" data-review-id="${esc(spec.id)}">
+    <summary>Review · ${esc(parts.join(' · '))}</summary>
+    <div class="review-comment-list" data-review-loaded="0">Open to load review…</div>
+  </details>`
+}
+
+function card (spec) {
+  const tags = (spec.tags || []).filter(tag => tag !== 'spec' && tag !== spec.status)
+  return `<article class="card" data-status="${esc(spec.status)}">
+    <h3><a class="title" href="${esc(spec.url)}" target="_blank" rel="noopener">${esc(spec.title)}</a></h3>
+    ${spec.abstract ? `<p class="abstract">${esc(spec.abstract)}</p>` : ''}
+    <div class="card-meta">
+      <span class="ns">${esc(spec.namespace || '')}</span>
+      ${tags.map(tag => `<span class="tag">${esc(tag)}</span>`).join('')}
+      ${spec.publiclyVisible === true ? '<span class="public">public</span>' : ''}
+      ${spec.author ? `<span>${esc(spec.author)}</span>` : ''}
+      ${spec.changed ? `<time datetime="${esc(spec.changed)}" title="${esc(spec.changed)}">${esc(relativeTime(spec.changed))}</time>` : ''}
+    </div>
+    ${reviewCommentsHtml(spec)}
+  </article>`
+}
+
+function page (specs, params, sourceAt) {
+  const q = String(params.get('q') || '')
+  const statusFilter = String(params.get('status') || '')
+  const selectedNamespace = String(params.get('ns') || '').trim()
+  let refreshPath = ROOT
+  if (selectedNamespace) {
+    try {
+      refreshPath = projectForNamespace(selectedNamespace).sourcePath
+    } catch {}
+  }
+  const namespaces = [...new Set(specs.map(s => s.namespace).filter(Boolean))].sort()
+  const visible = filterSpecs(specs, params)
+  const buckets = new Map(STATUSES.map(([key]) => [key, []]))
+  for (const spec of visible) (buckets.get(spec.status) || buckets.get('draft')).push(spec)
+  for (const bucket of buckets.values()) bucket.sort((a, b) => String(b.changed || '').localeCompare(String(a.changed || '')))
+  const cols = STATUSES.map(([key, label]) => {
+    const cards = buckets.get(key).map(card).join('')
+    return `<section class="col" data-status="${esc(key)}">
+      <h2><span class="status-dot" aria-hidden="true"></span>${esc(label)} <span class="count">${buckets.get(key).length}</span></h2>
+      ${cards || '<p class="empty">No specs in this stage.</p>'}
+    </section>`
+  }).join('')
+  const options = namespaces.map(ns => {
+    const spec = specs.find(s => s.namespace === ns)
+    const label = ns === 'local/specs' ? 'SpecDoc' : (spec?.projectName || ns)
+    return `<option value="${esc(ns)}"${params.get('ns') === ns ? ' selected' : ''}>${esc(label)}</option>`
+  }).join('')
+  const statusOptions = STATUSES.map(([key, label]) => `<option value="${esc(key)}"${statusFilter === key ? ' selected' : ''}>${esc(label)}</option>`).join('')
+  const issueSpecs = params.get('ns')
+    ? specs.filter(spec => spec.namespace === params.get('ns'))
+    : specs
+  const issueSpecOptions = issueSpecs.map(spec => {
+    const title = spec.title || spec.id || 'Specification'
+    return `<option value="${esc(title)}">${esc(title)}</option>`
+  }).join('')
+
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(TITLE)} · Board</title><link rel="stylesheet" href="/assets/ui.css"><link rel="stylesheet" href="/assets/board.css">
+<style>.readonly-badge,.public{display:inline-flex;align-items:center;padding:1px 6px;border-radius:999px;background:var(--success-soft);color:var(--success);font-size:12px}.abstract{margin:0;color:var(--muted);font-size:13px}.tag{padding:1px 5px;border-radius:4px;background:var(--lane)}.board{align-items:stretch}.col{max-width:340px}.empty{color:var(--muted);font-size:13px}.footer-note{margin-top:24px;color:var(--muted);font-size:12px}.toolbar select{min-width:160px}.refresh-form{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 18px;border-bottom:1px solid var(--border)}.refresh-form input{width:min(560px,55vw);padding:6px 8px}.refresh-monitor{display:flex;align-items:center;gap:8px;min-width:340px}.refresh-monitor progress{width:150px;height:12px}#refresh-status{font-size:12px;font-weight:600}#refresh-detail{font-size:12px;color:var(--muted)}
+.issues-panel{
+  margin:16px 0;
+  padding:16px;
+  border:1px solid var(--border);
+  border-radius:8px;
+  background:var(--surface);
+}
+.issues-heading{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  margin-bottom:12px;
+}
+.issues-heading h2{
+  margin:0 0 3px 0;
+}
+.issue-form{
+  display:grid;
+  grid-template-columns:2fr 1fr 2fr auto;
+  gap:8px;
+  margin-bottom:14px;
+}
+.issue-form textarea{
+  grid-column:1 / -2;
+  resize:vertical;
+}
+.issues-list{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.issue-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:7px 0;
+  border-top:1px solid var(--border);
+}
+.issue-state{
+  display:inline-flex;
+  min-width:54px;
+  justify-content:center;
+  padding:2px 6px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:600;
+}
+.issue-state.open{
+  background:var(--success-soft);
+  color:var(--success);
+}
+.issue-state.closed{
+  background:var(--lane);
+  color:var(--muted);
+}
+.issue-number{
+  color:var(--muted);
+  font-size:12px;
+}
+.issue-row a{
+  text-decoration:none;
+}
+@media(max-width:900px){
+  .issue-form{
+    grid-template-columns:1fr;
+  }
+  .issue-form textarea{
+    grid-column:auto;
+  }
+}
+
+
+.review-comments{margin-top:.65rem;border-top:1px solid rgba(127,127,127,.25);padding-top:.5rem}
+.review-comments summary{cursor:pointer;font-size:.86rem;font-weight:600}
+.review-comment-list{margin-top:.5rem;display:grid;gap:.55rem}
+.review-item{padding:.55rem .65rem;border:1px solid var(--border);border-radius:8px;background:rgba(127,127,127,.06)}
+.review-item-head{display:flex;gap:.5rem;align-items:center;font-size:.76rem;color:var(--muted);margin-bottom:.35rem}
+.review-message{white-space:pre-wrap;font-size:.84rem;line-height:1.4;margin:.25rem 0}
+.review-author{font-weight:600}
+.review-actions{display:flex;gap:.4rem;margin-top:.45rem}
+.review-actions button{font-size:.76rem;padding:.25rem .5rem}
+.review-resolved{opacity:.65}
+.review-suggestion pre{white-space:pre-wrap;word-break:break-word;margin:.35rem 0;font-size:.8rem}
+.review-error{color:var(--danger,#b42318)}
+
+.llm-task-list{display:grid;gap:10px}
+.llm-task-card{border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--surface)}
+.llm-task-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px}
+.llm-task-status{font-size:12px;padding:1px 6px;border-radius:999px;background:var(--lane)}
+.llm-task-instruction{white-space:pre-wrap;margin:6px 0 10px}
+.llm-task-form{display:grid;grid-template-columns:140px 1fr;gap:7px}
+.llm-task-form textarea{grid-column:1/-1;min-height:70px}
+.llm-task-actions{grid-column:1/-1;display:flex;gap:8px;align-items:center}
+.llm-task-approved{border-color:var(--success)}
+</style>
+</head><body class="board-page">
+<header class="app-header"><a class="brand" href="/">${esc(TITLE)}</a><nav class="app-nav"><a href="/" aria-current="page">Board</a></nav><div class="header-actions"><span class="readonly-badge">HedgeDoc 2</span></div></header>
+<form class="refresh-form" onsubmit="refreshSpecs(event,this)">
+  <label for="refresh-path">Code path</label>
+  <input id="refresh-path" name="path" type="text" value="${esc(refreshPath)}" spellcheck="false">
+  <button id="refresh-button" type="submit">Refresh specs</button>
+  <div class="refresh-monitor">
+    <progress id="refresh-progress" max="100" value="0"></progress>
+    <span id="refresh-status">Idle</span>
+    <span id="refresh-detail"></span>
+  </div>
+</form>
+<main><div class="page-heading"><div><h1>Specifications</h1><p class="context">${PUBLIC_ONLY ? 'Publicly visible HedgeDoc 2 specs' : 'HedgeDoc 2 specs'}</p></div></div>
+<form class="toolbar" method="get" action="/"><div class="search"><input type="search" name="q" value="${esc(q)}" placeholder="Filter these specs" aria-label="Filter these specs"></div>
+<label>Project <select name="ns"><option value="">All projects</option>${options}</select></label>
+<label>Stage <select name="status"><option value="">All stages</option>${statusOptions}</select></label>
+<button type="submit">Apply</button><a class="button" href="/">Clear</a></form>
+
+
+<div class="board-summary"><span>${visible.length} ${visible.length === 1 ? 'spec' : 'specs'}</span><span>Adapter snapshot: ${esc(sourceAt || 'unknown')}</span></div>
+<div class="board">${cols}</div>
+<section class="issues-panel">
+  <div class="issues-heading">
+    <div>
+      <h2>GitHub Issues</h2>
+      <span id="issue-counts">Loading…</span>
+    </div>
+    <button type="button" onclick="loadIssues()">Refresh issues</button>
+  </div>
+
+  <form id="issue-form" class="issue-form" onsubmit="createIssue(event,this)">
+    <input
+      id="issue-title"
+      name="title"
+      type="text"
+      placeholder="Issue title"
+      required
+    >
+
+    <select name="type">
+      <option value="bug">Bug</option>
+      <option value="spec-gap">Spec gap</option>
+      <option value="feature">Feature</option>
+      <option value="documentation">Documentation</option>
+    </select>
+
+    <select name="spec">
+      <option value="">Related specification</option>
+      ${issueSpecOptions}
+    </select>
+
+    <textarea
+      name="description"
+      rows="3"
+      placeholder="Describe the problem or requested change"
+      required
+    ></textarea>
+
+    <button type="submit">Raise issue</button>
+    <span id="issue-create-status"></span>
+  </form>
+
+  <div id="issues-list" class="issues-list">
+    Loading GitHub issues…
+  </div>
+</section>
+
+<section class="issues-panel" id="llm-tasks-panel">
+  <div class="issues-heading">
+    <div><h2>@llm Tasks</h2><div id="llm-task-counts" class="context">Loading…</div></div>
+    <button type="button" onclick="loadLlmTasks()">Refresh @llm</button>
+  </div>
+  <p class="context">Only <code>@llm</code> creates an LLM task. GitHub issues or milestones are created only after a human clicks Approve.</p>
+  <div id="llm-task-list"><p class="empty">Loading @llm tasks…</p></div>
+</section>
+<p class="footer-note">Specifications are generated from the selected code path and published to HedgeDoc.</p></main>
+<script>
+function formatDuration (seconds) {
+  seconds = Math.max(0, Number(seconds) || 0)
+  const minutes = Math.floor(seconds / 60)
+  const secs = Math.floor(seconds % 60)
+  if (minutes >= 60) {
+    const hours = Math.floor(minutes / 60)
+    const mins = minutes % 60
+    return hours + 'h ' + mins + 'm'
+  }
+  if (minutes) return minutes + 'm ' + secs + 's'
+  return secs + 's'
+}
+
+async function pollRefresh () {
+  const button = document.getElementById('refresh-button')
+  const status = document.getElementById('refresh-status')
+  const detail = document.getElementById('refresh-detail')
+  const progress = document.getElementById('refresh-progress')
+
+  try {
+    const response = await fetch('/refresh-status', { cache: 'no-store' })
+    const data = await response.json()
+    progress.value = data.progress || 0
+
+    if (data.status === 'running') {
+      button.disabled = true
+      status.textContent = data.phase + ' · ' + (data.progress || 0) + '%'
+      let text = 'Elapsed ' + formatDuration(data.elapsedSeconds)
+      if (data.etaSeconds != null) text += ' · ETA ~' + formatDuration(data.etaSeconds)
+      else if (data.overEstimate) text += ' · longer than estimate'
+      if (data.pid) text += ' · PID ' + data.pid
+      detail.textContent = text
+      return
+    }
+
+    button.disabled = false
+
+    if (data.status === 'complete') {
+      progress.value = 100
+      status.textContent = 'Complete'
+      detail.textContent = 'Finished in ' + formatDuration(data.elapsedSeconds)
+      return
+    }
+
+    if (data.status === 'failed') {
+      status.textContent = 'Failed'
+      detail.textContent = 'Exit ' + data.exitCode + ' · after ' + formatDuration(data.elapsedSeconds)
+      return
+    }
+
+    progress.value = 0
+    status.textContent = 'Idle'
+    detail.textContent = ''
+  } catch {
+    status.textContent = 'Status unavailable'
+  }
+}
+
+async function refreshSpecs (event, form) {
+  event.preventDefault()
+  const button = document.getElementById('refresh-button')
+  const input = document.getElementById('refresh-path')
+  const status = document.getElementById('refresh-status')
+  button.disabled = true
+  status.textContent = 'Starting…'
+
+  try {
+    const body = new URLSearchParams()
+    body.set('path', input.value.trim())
+    const response = await fetch('/refresh-specdoc', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      status.textContent = data.error || 'Unable to start'
+      button.disabled = false
+      return
+    }
+    await pollRefresh()
+  } catch {
+    status.textContent = 'Failed to start'
+    button.disabled = false
+  }
+}
+
+pollRefresh()
+setInterval(pollRefresh, 2000)
+</script>
+<script>
+const ISSUE_NAMESPACE = ${JSON.stringify(String(params.get('ns') || ''))}
+
+function escapeIssueHtml(value) {
+  return String(value == null ? '' : value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+function reviewTypeLabel(type) {
+  return ({
+    comment: 'Comment',
+    ins: 'Insertion',
+    del: 'Deletion',
+    sub: 'Substitution'
+  })[type] || type
+}
+
+function renderReviewSpan(span, index) {
+  const line = span.line ? 'line ' + span.line : ''
+  const head = '<div class="review-item-head"><strong>' +
+    escapeIssueHtml(reviewTypeLabel(span.type)) + '</strong>' +
+    (line ? '<span>' + escapeIssueHtml(line) + '</span>' : '') +
+    (span.resolved ? '<span>resolved</span>' : '') +
+    '</div>'
+
+  if (span.type === 'comment') {
+    const messages = (span.messages || []).map(message =>
+      '<div class="review-message">' +
+        (message.author ? '<span class="review-author">@' + escapeIssueHtml(message.author) + ':</span> ' : '') +
+        escapeIssueHtml(message.text || '') +
+      '</div>'
+    ).join('')
+
+    return '<div class="review-item' + (span.resolved ? ' review-resolved' : '') + '" data-review-index="' + index + '">' +
+      head + messages +
+      '<div class="review-actions">' +
+        '<button type="button" data-review-action="reply" data-review-index="' + index + '">Reply</button>' +
+        (!span.resolved ? '<button type="button" data-review-action="resolve" data-review-index="' + index + '">Resolve</button>' : '') +
+      '</div></div>'
+  }
+
+  let body = ''
+  if (span.type === 'sub') {
+    body = '<pre>− ' + escapeIssueHtml(span.oldText || '') + '\\n+ ' + escapeIssueHtml(span.newText || '') + '</pre>'
+  } else {
+    body = '<pre>' + escapeIssueHtml(span.content || '') + '</pre>'
+  }
+
+  return '<div class="review-item review-suggestion" data-review-index="' + index + '">' +
+    head + body +
+    '<div class="review-actions">' +
+      '<button type="button" data-review-action="accept" data-review-index="' + index + '">Accept</button>' +
+      '<button type="button" data-review-action="reject" data-review-index="' + index + '">Reject</button>' +
+    '</div></div>'
+}
+
+async function loadReviewPanel (panel, force = false) {
+  const list = panel.querySelector('.review-comment-list')
+  if (!list) return
+  if (!force && list.dataset.reviewLoaded === '1') return
+
+  list.textContent = 'Loading review…'
+  const id = panel.dataset.reviewId
+
+  try {
+    const response = await fetch('/api/review?id=' + encodeURIComponent(id), { cache: 'no-store' })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.error || 'Unable to load review')
+
+    panel._reviewData = data
+    list.dataset.reviewLoaded = '1'
+
+    const review = data.review || []
+    const openComments = review.filter(span => span.type === 'comment' && !span.resolved).length
+    const suggestions = review.filter(span => span.type !== 'comment').length
+    const labels = []
+    if (openComments) labels.push(openComments + ' open comment' + (openComments === 1 ? '' : 's'))
+    if (suggestions) labels.push(suggestions + ' suggestion' + (suggestions === 1 ? '' : 's'))
+    if (!labels.length) labels.push('clear')
+    panel.querySelector('summary').textContent = 'Review · ' + labels.join(' · ')
+
+    list.innerHTML = review.length
+      ? review.map(renderReviewSpan).join('')
+      : '<div class="review-message">No active CriticMarkup review items.</div>'
+  } catch (error) {
+    list.dataset.reviewLoaded = '0'
+    list.innerHTML = '<div class="review-error">' + escapeIssueHtml(error.message) + '</div>'
+  }
+}
+
+async function runReviewAction (panel, button) {
+  const data = panel._reviewData
+  const index = Number(button.dataset.reviewIndex)
+  const span = data && data.review && data.review[index]
+  if (!span) return
+
+  const action = button.dataset.reviewAction
+  let text = ''
+
+  if (action === 'reply') {
+    text = window.prompt('Reply to this review thread:', '') || ''
+    if (!text.trim()) return
+  }
+
+  button.disabled = true
+  try {
+    const response = await fetch('/api/review', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        id: panel.dataset.reviewId,
+        action,
+        raw: span.raw,
+        ordinal: span.ordinal,
+        text
+      })
+    })
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error || 'Review action failed')
+    await loadReviewPanel(panel, true)
+  } catch (error) {
+    window.alert(error.message)
+  } finally {
+    button.disabled = false
+  }
+}
+
+for (const panel of document.querySelectorAll('.review-comments[data-review-id]')) {
+  panel.addEventListener('toggle', () => {
+    if (panel.open) loadReviewPanel(panel)
+  })
+  panel.addEventListener('click', event => {
+    const button = event.target.closest('button[data-review-action]')
+    if (button) runReviewAction(panel, button)
+  })
+}
+
+async function loadIssues() {
+  const list = document.getElementById('issues-list')
+  const counts = document.getElementById('issue-counts')
+
+  if (!list || !counts) return
+
+  try {
+    const query = new URLSearchParams({ state: 'open' })
+    if (ISSUE_NAMESPACE) query.set('ns', ISSUE_NAMESPACE)
+    const response = await fetch('/api/issues?' + query.toString(), {
+      cache: 'no-store'
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Unable to load issues')
+    }
+
+    const issues = data.issues || []
+    const open = issues.filter(issue =>
+      String(issue.state).toUpperCase() === 'OPEN'
+    ).length
+    counts.textContent = open + ' open'
+
+    if (!issues.length) {
+      list.innerHTML = '<p class="empty">No GitHub issues.</p>'
+      return
+    }
+
+    list.innerHTML = issues.map(issue => {
+      const state = String(issue.state || '').toLowerCase()
+
+      return '<div class="issue-row">' +
+        '<span class="issue-state ' + escapeIssueHtml(state) + '">' +
+          escapeIssueHtml(state) +
+        '</span>' +
+        '<span class="issue-number">#' +
+          escapeIssueHtml(issue.number) +
+        '</span>' +
+        '<a href="' +
+          escapeIssueHtml(issue.url) +
+          '" target="_blank" rel="noopener">' +
+          escapeIssueHtml(issue.title) +
+        '</a>' +
+      '</div>'
+    }).join('')
+  } catch (error) {
+    counts.textContent = 'Unavailable'
+    list.textContent = error.message
+  }
+}
+
+async function createIssue(event, form) {
+  event.preventDefault()
+
+  const status = document.getElementById('issue-create-status')
+  const button = form.querySelector('button[type="submit"]')
+
+  button.disabled = true
+  status.textContent = 'Creating…'
+
+  try {
+    const body = new URLSearchParams(new FormData(form))
+    if (ISSUE_NAMESPACE) body.set('namespace', ISSUE_NAMESPACE)
+
+    const response = await fetch('/api/issues', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded'
+      },
+      body
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Unable to create issue')
+    }
+
+    status.innerHTML =
+      'Created <a target="_blank" rel="noopener" href="' +
+      escapeIssueHtml(data.url) +
+      '">GitHub issue</a>'
+
+    form.querySelector('[name="title"]').value = ''
+    form.querySelector('[name="description"]').value = ''
+
+    await loadIssues()
+  } catch (error) {
+    status.textContent = error.message
+  } finally {
+    button.disabled = false
+  }
+}
+
+loadIssues()
+</script>
+
+
+<script>
+const LLM_NAMESPACE = ${JSON.stringify(String(params.get('ns') || ''))}
+function llmEsc(value) {
+  return String(value == null ? '' : value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')
+}
+function llmTaskCard(task) {
+  const meta = '<div class="llm-task-head"><strong>' + llmEsc(task.specTitle) + '</strong><span class="llm-task-status">' + llmEsc(task.status) + '</span><span class="context">' + llmEsc(task.repo) + '</span>' + (task.line ? '<span class="context">line ' + llmEsc(task.line) + '</span>' : '') + '</div>'
+  if (task.status === 'approved') {
+    return '<article class="llm-task-card llm-task-approved" data-llm-task="' + llmEsc(task.id) + '">' + meta + '<div class="llm-task-instruction">' + llmEsc(task.instruction) + '</div><div><strong>Human approved · ready for LLM</strong>' + (task.githubUrl ? ' · <a target="_blank" rel="noopener" href="' + llmEsc(task.githubUrl) + '">GitHub</a>' : '') + '</div></article>'
+  }
+  const selected = (value) => task.action === value ? ' selected' : ''
+  return '<article class="llm-task-card" data-llm-task="' + llmEsc(task.id) + '">' + meta + '<div class="llm-task-instruction">' + llmEsc(task.instruction) + '</div><div class="llm-task-form"><select name="action"><option value="bug"' + selected('bug') + '>Bug</option><option value="feature"' + selected('feature') + '>Feature</option><option value="milestone"' + selected('milestone') + '>Milestone</option></select><input name="title" value="' + llmEsc(task.title) + '" aria-label="GitHub title"><textarea name="description" aria-label="GitHub description">' + llmEsc(task.instruction) + '</textarea><div class="llm-task-actions"><button type="button" onclick="approveLlmTask(this)">Approve & create GitHub</button><button type="button" onclick="dismissLlmTask(this)">Dismiss</button><span class="context" data-llm-status></span></div></div></article>'
+}
+async function loadLlmTasks() {
+  const list = document.getElementById('llm-task-list'); const counts = document.getElementById('llm-task-counts'); if (!list || !counts) return
+  try {
+    const query = new URLSearchParams(); if (LLM_NAMESPACE) query.set('ns', LLM_NAMESPACE)
+    const response = await fetch('/api/llm/tasks?' + query.toString(), { cache: 'no-store' }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Unable to load @llm tasks')
+    const tasks = data.tasks || []; const pending = tasks.filter(task => task.status !== 'approved').length; const approved = tasks.filter(task => task.status === 'approved').length
+    counts.textContent = pending + ' awaiting approval · ' + approved + ' ready for LLM'; list.className = 'llm-task-list'; list.innerHTML = tasks.length ? tasks.map(llmTaskCard).join('') : '<p class="empty">No open @llm tasks.</p>'
+  } catch (error) { counts.textContent = 'Unavailable'; list.innerHTML = '<p class="empty">' + llmEsc(error.message) + '</p>' }
+}
+async function approveLlmTask(button) {
+  const card = button.closest('[data-llm-task]'); const status = card.querySelector('[data-llm-status]'); const id = card.dataset.llmTask; button.disabled = true; status.textContent = 'Creating…'
+  try {
+    const payload = { action: card.querySelector('[name="action"]').value, title: card.querySelector('[name="title"]').value, description: card.querySelector('[name="description"]').value }
+    const response = await fetch('/api/llm/tasks/' + encodeURIComponent(id) + '/approve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Approval failed'); await loadLlmTasks(); if (typeof loadIssues === 'function') await loadIssues()
+  } catch (error) { status.textContent = error.message; button.disabled = false }
+}
+async function dismissLlmTask(button) {
+  const card = button.closest('[data-llm-task]'); const status = card.querySelector('[data-llm-status]'); const id = card.dataset.llmTask; button.disabled = true; status.textContent = 'Dismissing…'
+  try { const response = await fetch('/api/llm/tasks/' + encodeURIComponent(id) + '/dismiss', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Dismiss failed'); await loadLlmTasks() } catch (error) { status.textContent = error.message; button.disabled = false }
+}
+loadLlmTasks()
+</script>
+
+</body></html>`
+}
+
+function send (res, status, type, body, extra = {}) {
+  const buffer = Buffer.isBuffer(body) ? body : Buffer.from(body)
+  res.writeHead(status, { 'content-type': type, 'content-length': buffer.length, ...extra })
+  res.end(buffer)
+}
+
+function staticFile (res, pathname) {
+  const allowed = new Map([
+    ['/assets/ui.css', path.join(ROOT, 'spec-board', 'ui.css')],
+    ['/assets/board.css', path.join(ROOT, 'spec-board', 'board.css')]
+  ])
+  if (pathname.startsWith('/fonts/')) {
+    const name = path.basename(pathname)
+    if (!/^[A-Za-z0-9_.-]+$/.test(name)) return false
+    const file = path.join(ROOT, 'spec-board', 'fonts', name)
+    if (!fs.existsSync(file)) return false
+    return send(res, 200, 'font/woff2', fs.readFileSync(file), { 'cache-control': 'public, max-age=86400' }), true
+  }
+  const file = allowed.get(pathname)
+  if (!file || !fs.existsSync(file)) return false
+  send(res, 200, 'text/css; charset=utf-8', fs.readFileSync(file), { 'cache-control': 'public, max-age=300' })
+  return true
+}
+
+async function readRequestBody (req, maxBytes = 4096) {
+  const chunks = []
+  let size = 0
+  for await (const chunk of req) {
+    size += chunk.length
+    if (size > maxBytes) throw new Error('request body too large')
+    chunks.push(chunk)
+  }
+  return Buffer.concat(chunks).toString('utf8')
+}
+
+
+async function readIssueBody (req, maxBytes = 16384) {
+  const chunks = []
+  let size = 0
+
+  for await (const chunk of req) {
+    size += chunk.length
+    if (size > maxBytes) throw new Error('request body too large')
+    chunks.push(chunk)
+  }
+
+  return Buffer.concat(chunks).toString('utf8')
+}
+
+const server = http.createServer(async (req, res) => {
+  try {
+    const url = new URL(req.url, `http://${req.headers.host || `${HOST}:${PORT}`}`)
+
+    if (req.method === 'GET' && url.pathname === '/refresh-status') {
+      return send(
+        res,
+        200,
+        'application/json; charset=utf-8',
+        JSON.stringify(refreshStatus()),
+        { 'cache-control': 'no-store' }
+      )
+    }
+
+    if (req.method === 'POST' && url.pathname === '/refresh-specdoc') {
+      if (refreshRunning()) {
+        return send(
+          res,
+          409,
+          'application/json; charset=utf-8',
+          JSON.stringify({ ok: false, error: 'Refresh already running', pid: detectRefreshPid() })
+        )
+      }
+
+      const body = await readRequestBody(req)
+      const form = new URLSearchParams(body)
+      const requested = String(form.get('path') || ROOT).trim()
+      const sourcePath = path.resolve(requested)
+      const projectsRoot = path.resolve('/data/projects')
+
+      if (sourcePath !== projectsRoot && !sourcePath.startsWith(projectsRoot + path.sep)) {
+        return send(
+          res,
+          400,
+          'application/json; charset=utf-8',
+          JSON.stringify({ ok: false, error: 'Path must be under /data/projects' })
+        )
+      }
+
+      if (!fs.existsSync(sourcePath) || !fs.statSync(sourcePath).isDirectory()) {
+        return send(
+          res,
+          400,
+          'application/json; charset=utf-8',
+          JSON.stringify({ ok: false, error: 'Directory does not exist' })
+        )
+      }
+
+      if (!fs.existsSync(REFRESH_SCRIPT)) {
+        return send(
+          res,
+          500,
+          'application/json; charset=utf-8',
+          JSON.stringify({ ok: false, error: 'refresh-specdoc-board.sh not found' })
+        )
+      }
+
+      fs.mkdirSync(path.dirname(REFRESH_LOG), { recursive: true })
+      const log = fs.openSync(REFRESH_LOG, 'w')
+      const child = spawn(REFRESH_SCRIPT, [sourcePath], {
+        cwd: ROOT,
+        detached: true,
+        stdio: ['ignore', log, log],
+        env: { ...process.env, SPECDOC_NO_RESTART: '1' }
+      })
+      fs.closeSync(log)
+
+      refreshPid = child.pid
+      child.unref()
+      cache.expires = 0
+
+      return send(
+        res,
+        202,
+        'application/json; charset=utf-8',
+        JSON.stringify({ ok: true, pid: refreshPid, path: sourcePath, log: REFRESH_LOG })
+      )
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/review') {
+      const id = String(url.searchParams.get('id') || '').trim()
+      if (!id) {
+        return send(res, 400, 'application/json; charset=utf-8', JSON.stringify({ error: 'id is required' }))
+      }
+
+      try {
+        const spec = await loadCriticSpec(id)
+        return send(
+          res,
+          200,
+          'application/json; charset=utf-8',
+          JSON.stringify(criticReviewPayload(spec)),
+          { 'cache-control': 'no-store' }
+        )
+      } catch (e) {
+        return send(
+          res,
+          e.statusCode || 502,
+          'application/json; charset=utf-8',
+          JSON.stringify({ error: e.message })
+        )
+      }
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/review') {
+      try {
+        const raw = await readRequestBody(req, 32768)
+        const input = JSON.parse(raw || '{}')
+        const id = String(input.id || '').trim()
+        if (!id) {
+          return send(res, 400, 'application/json; charset=utf-8', JSON.stringify({ error: 'id is required' }))
+        }
+
+        const result = await applyCriticAction(id, input)
+        return send(
+          res,
+          200,
+          'application/json; charset=utf-8',
+          JSON.stringify(result),
+          { 'cache-control': 'no-store' }
+        )
+      } catch (e) {
+        return send(
+          res,
+          e.statusCode || 502,
+          'application/json; charset=utf-8',
+          JSON.stringify({ error: e.message })
+        )
+      }
+    }
+
+    if (req.method !== 'GET' && !(req.method === 'POST' && /^\/api\/llm\/tasks\/[^/]+\/(approve|dismiss)$/.test(url.pathname))) return send(res, 405, 'text/plain; charset=utf-8', 'method not allowed\n', { allow: 'GET, POST' })
+    if (staticFile(res, url.pathname)) return
+
+    if (req.method === 'GET' && url.pathname === '/api/llm/tasks') {
+      try {
+        const tasks = await collectLlmTasks(url.searchParams.get('ns'))
+        return send(res, 200, 'application/json; charset=utf-8', JSON.stringify({ humanApprovalRequired: true, assignee: '@llm', tasks }), { 'cache-control': 'no-store' })
+      } catch (e) {
+        return send(res, 502, 'application/json; charset=utf-8', JSON.stringify({ error: `@llm task scan failed: ${e.message}` }))
+      }
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/llm/agent') {
+      try {
+        const tasks = await collectLlmTasks(url.searchParams.get('ns'))
+        const approved = []
+        for (const task of tasks.filter(task => task.status === 'approved')) {
+          const spec = await loadCriticSpec(task.specId)
+          approved.push({ ...task, specBody: spec.body, humanApproved: true })
+        }
+        return send(res, 200, 'application/json; charset=utf-8', JSON.stringify({ approvedOnly: true, instructions: 'Use sourcePath and specBody to inspect the project, carry out the approved work, and report completion back to the review thread.', tasks: approved }), { 'cache-control': 'no-store' })
+      } catch (e) {
+        return send(res, 502, 'application/json; charset=utf-8', JSON.stringify({ error: `@llm agent feed failed: ${e.message}` }))
+      }
+    }
+
+    const llmApproveRoute = /^\/api\/llm\/tasks\/([^/]+)\/approve$/.exec(url.pathname)
+    if (req.method === 'POST' && llmApproveRoute) {
+      try {
+        const id = decodeURIComponent(llmApproveRoute[1]); const task = await findLlmTask(id)
+        if (!task) return send(res, 404, 'application/json; charset=utf-8', JSON.stringify({ error: '@llm task not found' }))
+        const state = readLlmState()
+        if (state[id] && state[id].status === 'approved' && state[id].githubUrl) return send(res, 200, 'application/json; charset=utf-8', JSON.stringify({ ok: true, alreadyApproved: true, url: state[id].githubUrl }))
+        const raw = await readRequestBody(req, 32768); const input = JSON.parse(raw || '{}'); const created = createApprovedLlmGithubWork(task, input)
+        state[id] = { status: 'approved', action: created.action, title: created.title, githubUrl: created.url, approvedAt: new Date().toISOString() }; writeLlmState(state)
+        return send(res, 201, 'application/json; charset=utf-8', JSON.stringify({ ok: true, humanApproved: true, url: created.url }))
+      } catch (e) {
+        return send(res, 502, 'application/json; charset=utf-8', JSON.stringify({ error: `@llm approval failed: ${e.message}` }))
+      }
+    }
+
+    const llmDismissRoute = /^\/api\/llm\/tasks\/([^/]+)\/dismiss$/.exec(url.pathname)
+    if (req.method === 'POST' && llmDismissRoute) {
+      try {
+        const id = decodeURIComponent(llmDismissRoute[1]); const task = await findLlmTask(id)
+        if (!task) return send(res, 404, 'application/json; charset=utf-8', JSON.stringify({ error: '@llm task not found' }))
+        const state = readLlmState(); state[id] = { status: 'dismissed', dismissedAt: new Date().toISOString() }; writeLlmState(state)
+        return send(res, 200, 'application/json; charset=utf-8', JSON.stringify({ ok: true }))
+      } catch (e) {
+        return send(res, 502, 'application/json; charset=utf-8', JSON.stringify({ error: `@llm dismiss failed: ${e.message}` }))
+      }
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/issues') {
+      const state = ['open', 'closed', 'all'].includes(url.searchParams.get('state'))
+        ? url.searchParams.get('state')
+        : 'open'
+
+      try {
+        const project = projectForNamespace(url.searchParams.get('ns'))
+        const issues = loadIssues(project.repo, state)
+
+        return send(
+          res,
+          200,
+          'application/json; charset=utf-8',
+          JSON.stringify({
+            namespace: project.namespace,
+            repo: project.repo,
+            issues
+          }),
+          { 'cache-control': 'no-store' }
+        )
+      } catch (e) {
+        return send(
+          res,
+          502,
+          'application/json; charset=utf-8',
+          JSON.stringify({
+            error: `GitHub issue lookup failed: ${e.message}`
+          })
+        )
+      }
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/issues') {
+      try {
+        const raw = await readIssueBody(req)
+        const form = new URLSearchParams(raw)
+
+        const title = String(form.get('title') || '').trim()
+        const description = String(form.get('description') || '').trim()
+        const type = String(form.get('type') || 'bug').trim()
+        const spec = String(form.get('spec') || '').trim()
+        const project = projectForNamespace(form.get('namespace'))
+
+        if (!title) {
+          return send(
+            res,
+            400,
+            'application/json; charset=utf-8',
+            JSON.stringify({ error: 'Issue title is required' })
+          )
+        }
+
+        if (!description) {
+          return send(
+            res,
+            400,
+            'application/json; charset=utf-8',
+            JSON.stringify({ error: 'Issue description is required' })
+          )
+        }
+
+        const branch = (() => {
+          try {
+            return execFileSync(
+              '/usr/bin/git',
+              ['-C', project.sourcePath, 'branch', '--show-current'],
+              { encoding: 'utf8' }
+            ).trim()
+          } catch {
+            return ''
+          }
+        })()
+
+        const commit = (() => {
+          try {
+            return execFileSync(
+              '/usr/bin/git',
+              ['-C', project.sourcePath, 'rev-parse', '--short', 'HEAD'],
+              { encoding: 'utf8' }
+            ).trim()
+          } catch {
+            return ''
+          }
+        })()
+
+        const issueBody = [
+          '## Description',
+          '',
+          description,
+          '',
+          '## SpecDoc context',
+          '',
+          `- Type: ${type}`,
+          spec ? `- Specification: ${spec}` : null,
+          `- Repository: ${project.repo}`,
+          branch ? `- Branch: ${branch}` : null,
+          commit ? `- Commit: ${commit}` : null,
+          `- Reported from: SpecBoard`,
+          ''
+        ].filter(value => value != null).join('\n')
+
+        const result = ghRun([
+          'issue', 'create',
+          '--repo', project.repo,
+          '--title', title,
+          '--body', issueBody
+        ])
+
+        const issueUrl = result
+          .split(/\r?\n/)
+          .find(line => line.startsWith('https://github.com/')) || result
+
+        return send(
+          res,
+          201,
+          'application/json; charset=utf-8',
+          JSON.stringify({
+            ok: true,
+            url: issueUrl
+          })
+        )
+      } catch (e) {
+        return send(
+          res,
+          502,
+          'application/json; charset=utf-8',
+          JSON.stringify({
+            error: `GitHub issue creation failed: ${e.message}`
+          })
+        )
+      }
+    }
+
+
+    if (url.pathname === '/statusz') {
+      const data = await loadSpecs(true)
+      return send(res, 200, 'application/json; charset=utf-8', JSON.stringify({ ok: true, source: SOURCE, publicOnly: PUBLIC_ONLY, specs: data.specs.length, at: data.at }))
+    }
+
+    if (url.pathname === '/api/specs') {
+      const data = await loadSpecs()
+      const specs = filterSpecs(data.specs, url.searchParams)
+      return send(res, 200, 'application/json; charset=utf-8', JSON.stringify({ specs, next: null, at: data.at, stale: false }))
+    }
+
+    if (url.pathname !== '/') return send(res, 404, 'text/plain; charset=utf-8', 'not found\n')
+    const data = await loadSpecs()
+    return send(res, 200, 'text/html; charset=utf-8', page(data.specs, url.searchParams, data.at), { 'cache-control': 'no-store' })
+  } catch (e) {
+    console.error(e)
+    return send(res, 502, 'text/plain; charset=utf-8', `board source error: ${e.message}\n`)
+  }
+})
+
+server.listen(PORT, HOST, () => {
+  console.log(`SpecDoc HD2 board listening on http://${HOST}:${PORT}`)
+  console.log(`Adapter source: ${SOURCE}`)
+  console.log(`Public-only: ${PUBLIC_ONLY}`)
+})

@@ -1,0 +1,46 @@
+<style id="specdoc-merge-codepaths-v7-style">
+#specdoc-codepaths-dialog{width:min(820px,94vw);max-height:90vh;border:1px solid var(--border,#bbb);border-radius:12px;background:var(--surface,#fff);color:inherit;padding:0;box-shadow:0 18px 70px rgba(0,0,0,.35)}
+#specdoc-codepaths-dialog::backdrop{background:rgba(0,0,0,.5)}
+.mcv7-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border,#ccc)}
+.mcv7-head h2{margin:0;font-size:1.15rem}.mcv7-body{padding:16px 18px;overflow:auto;max-height:72vh}.mcv7-muted{opacity:.72;font-size:.88rem}.mcv7-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.mcv7-grid label{display:grid;gap:5px}.mcv7-dropdown{border:1px solid var(--border,#ccc);border-radius:8px;margin:14px 0}.mcv7-dropdown>summary{cursor:pointer;font-weight:650;padding:11px 12px}.mcv7-list{border-top:1px solid var(--border,#ccc);max-height:340px;overflow:auto}.mcv7-row{display:flex;gap:9px;align-items:flex-start;padding:9px 11px;border-bottom:1px solid rgba(127,127,127,.15)}.mcv7-row:last-child{border-bottom:0}.mcv7-path{font-family:monospace;font-size:.82rem;opacity:.8;word-break:break-all}.mcv7-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin:12px 0}.mcv7-status{white-space:pre-wrap;padding:9px;border-radius:8px;background:rgba(127,127,127,.08);min-height:42px}.mcv7-history{margin-top:15px;border-top:1px solid var(--border,#ccc);padding-top:10px}.mcv7-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}.mcv7-history a{word-break:break-all}@media(max-width:700px){.mcv7-grid{grid-template-columns:1fr}}
+</style>
+<dialog id="specdoc-codepaths-dialog">
+  <div class="mcv7-head"><h2>Merge code paths</h2><button type="button" id="mcv7-close">Close</button></div>
+  <div class="mcv7-body">
+    <p class="mcv7-muted">Select two or more code paths. They are combined into one temporary codebase and sent through <strong>one</strong> standard <strong>Refresh specs</strong> run. Existing specification Markdown is not selected, read, or merged.</p>
+    <div class="mcv7-grid">
+      <label>Combined codebase name<input id="mcv7-alias" value="combined-codebase"></label>
+      <label>Filter code paths<input id="mcv7-filter" placeholder="project or /data/projects/path"></label>
+    </div>
+    <details class="mcv7-dropdown" open>
+      <summary id="mcv7-summary">Code paths · 0 selected</summary>
+      <div class="mcv7-tools" style="padding:0 11px"><button type="button" id="mcv7-all">Select all</button><button type="button" id="mcv7-none">Clear</button><strong id="mcv7-count">0 selected</strong></div>
+      <div id="mcv7-list" class="mcv7-list">Loading…</div>
+    </details>
+    <div class="mcv7-actions"><button type="button" id="mcv7-run">Run ONE Refresh specs</button></div>
+    <div id="mcv7-status" class="mcv7-status">Idle</div>
+    <div class="mcv7-history"><strong>Recent combined refreshes</strong><div id="mcv7-history-list" class="mcv7-muted">Loading…</div></div>
+  </div>
+</dialog>
+<script id="specdoc-merge-codepaths-v7-script">
+(() => {
+  const q=s=>document.querySelector(s), qa=s=>[...document.querySelectorAll(s)]
+  const oldDialog=q('#specdoc-merge-dialog'); if(oldDialog) oldDialog.remove()
+  const oldButton=q('#merge-open'); if(oldButton) oldButton.remove()
+  const dialog=q('#specdoc-codepaths-dialog'); if(!dialog) return
+  const open=document.createElement('button');open.type='button';open.textContent='Merge';open.id='merge-open'
+  const host=document.querySelector('.header-actions')||document.querySelector('.refresh-form')||document.body;host.appendChild(open)
+  let jobId=null,poll=null,catalog=[]
+  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
+  function selected(){return qa('.mcv7-check:checked').map(x=>x.dataset.ns)}
+  function count(){const n=selected().length;q('#mcv7-count').textContent=n+' selected';q('#mcv7-summary').textContent='Code paths · '+n+' selected';q('#mcv7-run').disabled=n<2}
+  function render(){const f=q('#mcv7-filter').value.trim().toLowerCase();q('#mcv7-list').innerHTML=catalog.filter(p=>!f||(p.namespace+' '+p.displayName+' '+p.sourcePath).toLowerCase().includes(f)).map(p=>`<label class="mcv7-row"><input type="checkbox" class="mcv7-check" data-ns="${esc(p.namespace)}" ${p.sourceAvailable?'':'disabled'}><span><strong>${esc(p.displayName)}</strong> <span class="mcv7-muted">${esc(p.namespace)}</span><br><span class="mcv7-path">${esc(p.sourcePath)}</span>${p.sourceAvailable?'':'<br><span class="mcv7-muted">SOURCE PATH MISSING</span>'}</span></label>`).join('')||'<p class="mcv7-muted" style="padding:10px">No code paths found.</p>';qa('.mcv7-check').forEach(x=>x.onchange=count);count()}
+  async function load(){const r=await fetch('/api/merge-code-paths/catalog',{cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.error||('HTTP '+r.status));catalog=d.projects||[];render();await history()}
+  async function history(){const r=await fetch('/api/merge-code-paths/jobs',{cache:'no-store'});if(!r.ok)return;const d=await r.json();q('#mcv7-history-list').innerHTML=(d.history||[]).slice(0,8).map(j=>{const t=esc(new Date(j.completedAt||j.createdAt).toLocaleString());const name=esc(j.combinedNamespace||j.title||j.id);return `<div>${j.url?`<a href="${esc(j.url)}">${name}</a>`:name} — ${j.projectCount||j.projects?.length||0} code paths — ${t}</div>`}).join('')||'No combined refreshes yet.'}
+  async function pollJob(){if(!jobId)return;const r=await fetch('/api/merge-code-paths/jobs/'+encodeURIComponent(jobId),{cache:'no-store'});const j=await r.json();if(!r.ok){q('#mcv7-status').textContent=j.error||('HTTP '+r.status);return}q('#mcv7-status').textContent=(j.status||'running').toUpperCase()+' — '+(j.progress||0)+'%\n'+(j.detail||'');if(j.status==='done'||j.status==='error'||j.status==='failed'){clearInterval(poll);poll=null;q('#mcv7-run').disabled=false;await history()}}
+  q('#mcv7-run').onclick=async()=>{const projects=selected();if(projects.length<2)return; q('#mcv7-run').disabled=true;q('#mcv7-status').textContent='Starting ONE standard Refresh specs run…';const payload={projects,alias:q('#mcv7-alias').value.trim()};const r=await fetch('/api/merge-code-paths',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});const d=await r.json();if(!r.ok){q('#mcv7-status').textContent=d.error||('HTTP '+r.status);q('#mcv7-run').disabled=false;return}jobId=d.id;await pollJob();poll=setInterval(pollJob,2500)}
+  q('#mcv7-close').onclick=()=>dialog.close();open.onclick=()=>{dialog.showModal();load().catch(e=>q('#mcv7-status').textContent=e.message)}
+  q('#mcv7-filter').oninput=render;q('#mcv7-all').onclick=()=>{qa('.mcv7-check:not(:disabled)').forEach(x=>x.checked=true);count()};q('#mcv7-none').onclick=()=>{qa('.mcv7-check').forEach(x=>x.checked=false);count()}
+  count()
+})()
+</script>

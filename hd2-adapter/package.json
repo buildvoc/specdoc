@@ -1,0 +1,12 @@
+{
+  "name": "specdoc-hd2-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local HedgeDoc 2 read adapter for SpecDoc MCP evaluation",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

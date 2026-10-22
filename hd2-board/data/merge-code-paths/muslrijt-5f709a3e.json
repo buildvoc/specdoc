@@ -1,0 +1,30 @@
+{
+  "id": "muslrijt-5f709a3e",
+  "status": "done",
+  "progress": 100,
+  "phase": "done",
+  "detail": "DONE — 100% ONE Standard Refresh specs run completed for 2 code paths. One combined specification set was generated directly from the combined codebase; existing specification Markdown was not used.",
+  "createdAt": "2026-10-03T16:24:48.809Z",
+  "updatedAt": "2026-10-03T16:48:16.541Z",
+  "title": "Merged Specification — 2 Code Paths",
+  "alias": "combined-codebase",
+  "model": "gemma4:26b",
+  "projectCount": 2,
+  "projects": [
+    {
+      "namespace": "buildvoc/PIC2BIM",
+      "sourcePath": "/data/projects/pic2bim",
+      "outputDir": "/data/projects/specdoc/specifications/buildvoc/pic2bim"
+    },
+    {
+      "namespace": "buildvoc/PIC2BIMAndroid",
+      "sourcePath": "/data/projects/PIC2BIMAndroid",
+      "outputDir": "/data/projects/specdoc/specifications/buildvoc/pic2bimandroid"
+    }
+  ],
+  "combinedSourcePath": "/data/projects/specdoc/.combined-codepaths/buildvoc--combined-codebase",
+  "combinedNamespace": "buildvoc/combined-codebase",
+  "refreshPid": 187814,
+  "url": "/?ns=buildvoc%2Fcombined-codebase",
+  "completedAt": "2026-10-03T16:48:16.541Z"
+}

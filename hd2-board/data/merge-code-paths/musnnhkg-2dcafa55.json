@@ -1,0 +1,26 @@
+{
+  "id": "musnnhkg-2dcafa55",
+  "status": "error",
+  "progress": 1,
+  "phase": "error",
+  "detail": "Combined Refresh specs failed",
+  "createdAt": "2026-10-03T17:17:40.145Z",
+  "updatedAt": "2026-10-03T17:17:40.530Z",
+  "title": "Merged Specification — 2 Code Paths",
+  "alias": "combined-codebase",
+  "model": "gemma4:26b",
+  "projectCount": 2,
+  "projects": [
+    {
+      "namespace": "buildvoc/hedgedoc",
+      "sourcePath": "/data/projects/hedgedoc",
+      "outputDir": "/data/projects/specdoc/specifications/buildvoc/hedgedoc"
+    },
+    {
+      "namespace": "buildvoc/hedgedoc-nb",
+      "sourcePath": "/data/projects/hedgedoc-nb-frontend",
+      "outputDir": "/data/projects/specdoc/specifications/buildvoc/hedgedoc-nb"
+    }
+  ],
+  "error": "Error: Code path is not a readable Git working tree: /data/projects/hedgedoc\n\n    at sourceFiles (/data/projects/specdoc/hd2-board/merge-code-paths-worker.js:71:11)\n    at copyCurrentCode (/data/projects/specdoc/hd2-board/merge-code-paths-worker.js:75:17)\n    at buildCombinedWorkspace (/data/projects/specdoc/hd2-board/merge-code-paths-worker.js:111:20)\n    at main (/data/projects/specdoc/hd2-board/merge-code-paths-worker.js:186:22)\n    at Object.<anonymous> (/data/projects/specdoc/hd2-board/merge-code-paths-worker.js:209:1)\n    at Module._compile (node:internal/modules/cjs/loader:1521:14)\n    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)\n    at Module.load (node:internal/modules/cjs/loader:1266:32)\n    at Module._load (node:internal/modules/cjs/loader:1091:12)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12)"
+}

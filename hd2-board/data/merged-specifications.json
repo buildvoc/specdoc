@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "merges": [
+    {
+      "id": "muski2a4-69f1767a",
+      "createdAt": "2026-10-03T15:49:28.205Z",
+      "completedAt": "2026-10-03T15:58:09.567Z",
+      "title": "Merged Cross-Project Specification",
+      "alias": "merged-cross-project-specification",
+      "model": "gemma4:26b",
+      "templateSource": "buildvoc/PIC2BIM/01_unified_task___user_management__inertia_js__.md",
+      "includeCodebase": false,
+      "codeProjectCount": 0,
+      "sourceFileCount": 0,
+      "projectCount": 2,
+      "specCount": 13,
+      "projects": [
+        "buildvoc/PIC2BIM",
+        "buildvoc/PIC2BIMAndroid"
+      ],
+      "url": "http://192.168.1.142:8180/n/merged-cross-project-specification",
+      "localFile": "/data/projects/specdoc/hd2-board/data/merged-specifications/merged-cross-project-specification.md"
+    },
+    {
+      "id": "musi8p1f-fed2e85b",
+      "createdAt": "2026-10-03T14:46:11.907Z",
+      "completedAt": "2026-10-03T14:55:30.366Z",
+      "title": "Merged Cross-Project Specification",
+      "alias": "merged-cross-project-specification",
+      "model": "gemma4:26b",
+      "templateSource": "buildvoc/PIC2BIMAndroid/02_sensor_orchestration_layer_.md",
+      "includeCodebase": false,
+      "codeProjectCount": 0,
+      "sourceFileCount": 0,
+      "projectCount": 2,
+      "specCount": 12,
+      "projects": [
+        "buildvoc/PIC2BIM",
+        "buildvoc/PIC2BIMAndroid"
+      ],
+      "url": "http://192.168.1.142:8180/n/merged-cross-project-specification",
+      "localFile": "/data/projects/specdoc/hd2-board/data/merged-specifications/merged-cross-project-specification.md"
+    },
+    {
+      "id": "mush7kjk-8c54a563",
+      "createdAt": "2026-10-03T14:17:19.809Z",
+      "completedAt": "2026-10-03T14:26:09.628Z",
+      "title": "Merged Cross-Project Specification",
+      "alias": "merged-cross-project-specification",
+      "model": "gemma4:26b",
+      "templateSource": "buildvoc/PIC2BIMAndroid/02_sensor_orchestration_layer_.md",
+      "includeCodebase": false,
+      "codeProjectCount": 0,
+      "sourceFileCount": 0,
+      "projectCount": 2,
+      "specCount": 12,
+      "projects": [
+        "buildvoc/PIC2BIM",
+        "buildvoc/PIC2BIMAndroid"
+      ],
+      "url": "http://192.168.1.142:8180/n/merged-cross-project-specification",
+      "localFile": "/data/projects/specdoc/hd2-board/data/merged-specifications/merged-cross-project-specification.md"
+    },
+    {
+      "id": "musgduu3-f470085f",
+      "createdAt": "2026-10-03T13:54:13.467Z",
+      "completedAt": "2026-10-03T14:02:27.209Z",
+      "title": "Merged Cross-Project Specification",
+      "alias": "merged-cross-project-specification",
+      "model": "gemma4:26b",
+      "templateSource": "buildvoc/PIC2BIMAndroid/02_sensor_orchestration_layer_.md",
+      "includeCodebase": false,
+      "codeProjectCount": 0,
+      "sourceFileCount": 0,
+      "projectCount": 2,
+      "specCount": 12,
+      "projects": [
+        "buildvoc/PIC2BIM",
+        "buildvoc/PIC2BIMAndroid"
+      ],
+      "url": "http://192.168.1.142:8180/n/merged-cross-project-specification",
+      "localFile": "/data/projects/specdoc/hd2-board/data/merged-specifications/merged-cross-project-specification.md"
+    },
+    {
+      "id": "mus8vazd-ca6ee061",
+      "createdAt": "2026-10-03T10:23:50.618Z",
+      "completedAt": "2026-10-03T10:32:14.573Z",
+      "title": "Merged Cross-Project Specification",
+      "alias": "merged-cross-project-specification",
+      "model": "gemma4:26b",
+      "templateSource": "buildvoc/PIC2BIMAndroid/02_sensor_orchestration_layer_.md",
+      "projectCount": 2,
+      "specCount": 14,
+      "projects": [
+        "buildvoc/PIC2BIM",
+        "buildvoc/PIC2BIMAndroid"
+      ],
+      "url": "http://192.168.1.142:8180/n/merged-cross-project-specification",
+      "localFile": "/data/projects/specdoc/hd2-board/data/merged-specifications/merged-cross-project-specification.md"
+    },
+    {
+      "id": "mus885jm-e892a231",
+      "createdAt": "2026-10-03T10:05:50.483Z",
+      "completedAt": "2026-10-03T10:13:47.439Z",
+      "title": "Merged Cross-Project Specification",
+      "alias": "merged-cross-project-specification",
+      "model": "gemma4:26b",
+      "projectCount": 2,
+      "specCount": 14,
+      "projects": [
+        "buildvoc/PIC2BIM",
+        "buildvoc/PIC2BIMAndroid"
+      ],
+      "url": "http://192.168.1.142:8180/n/merged-cross-project-specification",
+      "localFile": "/data/projects/specdoc/hd2-board/data/merged-specifications/merged-cross-project-specification.md"
+    }
+  ]
+}

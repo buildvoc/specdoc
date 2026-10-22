@@ -1,0 +1,22 @@
+{
+  "name": "hd2-board",
+  "version": "1.0.0",
+  "description": "A small compatibility board for the HedgeDoc 2 adapter in `../hd2-adapter`. It is deliberately read-only: no approvals, GitHub publication, review bots, checkpoints, or HedgeDoc editor mutations are performed.",
+  "main": "critic-context-block.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "markdown-it": "^13.0.2",
+    "markdown-it-abbr": "^1.0.4",
+    "markdown-it-deflist": "^2.1.0",
+    "markdown-it-footnote": "^3.0.3",
+    "markdown-it-mathjax": "^2.0.0",
+    "markdown-it-sub": "^1.0.0",
+    "markdown-it-sup": "^1.0.0"
+  }
+}

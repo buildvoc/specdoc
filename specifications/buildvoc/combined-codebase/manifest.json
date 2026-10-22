@@ -1,0 +1,54 @@
+{
+  "aliasPrefix": "buildvoc-combined-codebase",
+  "branch": "master",
+  "commit": "43ed4ff2690f7641f521594bda6d38370d3f3a04",
+  "files": [
+    {
+      "alias": "buildvoc-combined-codebase-task-photo-management-system",
+      "file": "01_task___photo_management_system_.md",
+      "title": "Task & Photo Management System",
+      "url": "http://192.168.1.142:8180/n/buildvoc-combined-codebase-task-photo-management-system"
+    },
+    {
+      "alias": "buildvoc-combined-codebase-user-agency-access-control-rbac",
+      "file": "02_user___agency_access_control__rbac__.md",
+      "title": "User & Agency Access Control (RBAC)",
+      "url": "http://192.168.1.142:8180/n/buildvoc-combined-codebase-user-agency-access-control-rbac"
+    },
+    {
+      "alias": "buildvoc-combined-codebase-building-attributes-engine-buildingheight",
+      "file": "03_building_attributes_engine__buildingheight__.md",
+      "title": "Building Attributes Engine (BuildingHeight)",
+      "url": "http://192.168.1.142:8180/n/buildvoc-combined-codebase-building-attributes-engine-buildingheight"
+    },
+    {
+      "alias": "buildvoc-combined-codebase-deck-gl-visualization-overlay",
+      "file": "04_deck_gl_visualization_overlay_.md",
+      "title": "Deck.gl Visualization Overlay",
+      "url": "http://192.168.1.142:8180/n/buildvoc-combined-codebase-deck-gl-visualization-overlay"
+    },
+    {
+      "alias": "buildvoc-combined-codebase-mapbox-maplibre-tile-engine-pmtiles",
+      "file": "05_mapbox_maplibre_tile_engine__pmtiles__.md",
+      "title": "Mapbox/MapLibre Tile Engine (PMTiles)",
+      "url": "http://192.168.1.142:8180/n/buildvoc-combined-codebase-mapbox-maplibre-tile-engine-pmtiles"
+    },
+    {
+      "alias": "buildvoc-combined-codebase-changelog",
+      "file": "CHANGELOG.md",
+      "title": "Change Log",
+      "url": "http://192.168.1.142:8180/n/buildvoc-combined-codebase-changelog"
+    },
+    {
+      "alias": "buildvoc-combined-codebase-index",
+      "file": "index.md",
+      "title": "combined-codebase Specification Index",
+      "url": "http://192.168.1.142:8180/n/buildvoc-combined-codebase-index"
+    }
+  ],
+  "generatedAt": "2026-10-03T16:48:14.544563+00:00",
+  "githubRepo": "buildvoc/combined-codebase",
+  "namespace": "buildvoc/combined-codebase",
+  "sourcePath": "/data/projects/specdoc/.combined-codepaths/buildvoc--combined-codebase",
+  "version": 1
+}

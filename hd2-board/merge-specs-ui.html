@@ -1,0 +1,69 @@
+<style id="specdoc-merge-style">
+#specdoc-merge-dialog{width:min(1050px,94vw);max-height:90vh;border:1px solid var(--border,#bbb);border-radius:12px;background:var(--surface,#fff);color:inherit;padding:0;box-shadow:0 18px 70px rgba(0,0,0,.35)}
+#specdoc-merge-dialog::backdrop{background:rgba(0,0,0,.5)}
+.merge-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border,#ccc)}
+.merge-head h2{margin:0;font-size:1.15rem}.merge-body{padding:16px 18px;overflow:auto;max-height:72vh}.merge-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.merge-grid label{display:grid;gap:5px}.merge-project{border:1px solid var(--border,#ccc);border-radius:8px;margin:9px 0;padding:8px 10px}.merge-project summary{cursor:pointer;font-weight:650}.merge-spec-list{display:grid;gap:5px;padding:8px 2px 2px 18px}.merge-spec-list label{display:flex;gap:8px;align-items:flex-start}.merge-tools,.merge-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}.merge-actions{justify-content:flex-end;border-top:1px solid var(--border,#ccc);padding-top:12px}.merge-status{white-space:pre-wrap;padding:9px;border-radius:8px;background:rgba(127,127,127,.08);min-height:38px}.merge-history{margin-top:16px;border-top:1px solid var(--border,#ccc);padding-top:10px}.merge-history a{word-break:break-all}.merge-muted{opacity:.7;font-size:.86rem}.merge-project-count{font-size:.83rem;opacity:.72;margin-left:6px}
+@media(max-width:760px){.merge-grid{grid-template-columns:1fr}}
+</style>
+<dialog id="specdoc-merge-dialog">
+  <div class="merge-head"><h2>Merge MDs</h2><button type="button" id="merge-close">Close</button></div>
+  <div class="merge-body">
+    <p class="merge-muted">Merge existing SpecDoc Markdown specifications only. Repository source code is not read and Refresh specs is not run.</p>
+    <div class="merge-grid">
+      <label>Title<input id="merge-title" value="Merged Cross-Project Specification"></label>
+      <label>HedgeDoc alias<input id="merge-alias" value="merged-cross-project-specification"></label>
+      <label>Ollama model<input id="merge-model" value="gemma4:26b"></label>
+      <label>Filter MDs<input id="merge-filter" placeholder="project, title or filename"></label>
+    </div>
+    <div class="merge-tools"><button type="button" id="merge-all">Select all MDs</button><button type="button" id="merge-none">Clear</button><strong id="merge-selection">0 selected</strong></div>
+    <div id="merge-catalog">Loading…</div>
+    <div class="merge-actions"><button type="button" id="merge-run">Merge MDs &amp; publish</button></div>
+    <div id="merge-status" class="merge-status">Idle</div>
+    <div class="merge-history"><strong>Recent MD merges</strong><div id="merge-history-list" class="merge-muted">Loading…</div></div>
+  </div>
+</dialog>
+<script id="specdoc-merge-script">
+(() => {
+  const q=s=>document.querySelector(s), qa=s=>[...document.querySelectorAll(s)]
+  const dialog=q('#specdoc-merge-dialog'); if(!dialog) return
+  const host=document.querySelector('.header-actions') || document.querySelector('.refresh-form') || document.body
+  const legacy=q('#merge-open'); if(legacy && !legacy.closest('dialog')) legacy.remove()
+  let open=q('#merge-mds-open')
+  if(!open){open=document.createElement('button')}
+  open.type='button'; open.textContent='Merge MDs'; open.id='merge-mds-open'; host.appendChild(open)
+
+  let poll=null
+  function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+  function slug(s){return String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,100)}
+  function selected(){return qa('.merge-spec-check:checked').map(x=>({namespace:x.dataset.ns,path:x.dataset.path}))}
+  function updateCount(){const xs=selected(),ps=new Set(xs.map(x=>x.namespace));q('#merge-selection').textContent=xs.length+' MDs across '+ps.size+' projects'}
+
+  q('#merge-close').onclick=()=>dialog.close()
+  open.onclick=()=>{dialog.showModal();loadAll()}
+  q('#merge-title').addEventListener('input',()=>{if(!q('#merge-alias').dataset.touched)q('#merge-alias').value=slug(q('#merge-title').value)})
+  q('#merge-alias').addEventListener('input',()=>q('#merge-alias').dataset.touched='1')
+  q('#merge-all').onclick=()=>{qa('.merge-spec-check').filter(x=>x.closest('.merge-project').style.display!=='none').forEach(x=>x.checked=true);updateCount()}
+  q('#merge-none').onclick=()=>{qa('.merge-spec-check').forEach(x=>x.checked=false);updateCount()}
+  q('#merge-filter').addEventListener('input',()=>{const n=q('#merge-filter').value.toLowerCase().trim();qa('.merge-project').forEach(p=>{const ph=(p.dataset.search||'').includes(n);let any=false;p.querySelectorAll('.merge-spec-row').forEach(row=>{const show=!n||ph||(row.dataset.search||'').includes(n);row.style.display=show?'':'none';if(show)any=true});p.style.display=any?'':'none'})})
+
+  async function loadCatalog(){
+    const r=await fetch('/api/merge-specs/catalog',{cache:'no-store'});if(!r.ok)throw new Error('Merge catalog HTTP '+r.status);const data=await r.json()
+    q('#merge-model').value=data.defaultModel||q('#merge-model').value
+    q('#merge-catalog').innerHTML=(data.projects||[]).map((p,pi)=>`<details class="merge-project" open data-search="${esc((p.namespace+' '+p.displayName).toLowerCase())}"><summary><label><input type="checkbox" class="merge-project-check" data-project="${pi}"> ${esc(p.displayName)}</label><span class="merge-project-count">${p.files.length} MDs</span></summary><div class="merge-spec-list">${p.files.map(f=>`<label class="merge-spec-row" data-search="${esc((f.title+' '+f.path).toLowerCase())}"><input type="checkbox" class="merge-spec-check" data-project="${pi}" data-ns="${esc(f.namespace)}" data-path="${esc(f.path)}"> <span><strong>${esc(f.title)}</strong><br><span class="merge-muted">${esc(f.path)}</span></span></label>`).join('')}</div></details>`).join('')||'<p>No registered specification MDs found.</p>'
+    qa('.merge-spec-check').forEach(x=>x.onchange=updateCount)
+    qa('.merge-project-check').forEach(x=>x.onchange=()=>{qa('.merge-spec-check[data-project="'+x.dataset.project+'"]').forEach(y=>y.checked=x.checked);updateCount()})
+    updateCount()
+  }
+  async function loadJobs(){const r=await fetch('/api/merge-specs/jobs',{cache:'no-store'});if(!r.ok)return;const data=await r.json();q('#merge-history-list').innerHTML=(data.history||[]).slice(0,12).map(h=>`<div><a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a> — ${h.specCount} MDs / ${h.projectCount} projects — ${esc(h.model)}</div>`).join('')||'No merges yet.';if(data.active){showJob(data.active);pollJob(data.active.id)}}
+  async function loadAll(){try{await Promise.all([loadCatalog(),loadJobs()])}catch(e){q('#merge-status').textContent='Error: '+e.message}}
+  function showJob(j){q('#merge-run').disabled=j.status==='running';q('#merge-status').innerHTML=`${esc(String(j.status||'').toUpperCase())} — ${Number(j.progress||0)}%\n${esc(j.detail||'')}${j.url?`\n<a href="${esc(j.url)}" target="_blank" rel="noopener">Open merged HedgeDoc specification</a>`:''}${j.error?`\n${esc(j.error)}`:''}`}
+  function pollJob(id){clearInterval(poll);poll=setInterval(async()=>{try{const r=await fetch('/api/merge-specs/jobs/'+encodeURIComponent(id),{cache:'no-store'});if(!r.ok)return;const j=await r.json();showJob(j);if(j.status!=='running'){clearInterval(poll);poll=null;loadJobs()}}catch{}},2000)}
+
+  q('#merge-run').onclick=async()=>{
+    const inputs=selected();if(inputs.length<2){q('#merge-status').textContent='Select at least two Markdown specifications.';return}
+    const payload={inputs,title:q('#merge-title').value.trim(),alias:q('#merge-alias').value.trim(),model:q('#merge-model').value.trim()||'gemma4:26b',includeCodebase:false}
+    q('#merge-run').disabled=true;q('#merge-status').textContent='Starting MD-only merge…'
+    try{const r=await fetch('/api/merge-specs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const j=await r.json();if(!r.ok)throw new Error(j.error||JSON.stringify(j));showJob(j);pollJob(j.id)}catch(e){q('#merge-run').disabled=false;q('#merge-status').textContent='Error: '+e.message}
+  }
+})()
+</script>

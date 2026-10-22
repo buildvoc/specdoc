@@ -1,0 +1,60 @@
+{
+  "aliasPrefix": "buildvoc-pic2bimandroid",
+  "branch": "main",
+  "commit": "57ef0ed6401025ec514352ff693c9f2bc4107d3d",
+  "files": [
+    {
+      "alias": "buildvoc-pic2bimandroid-task-centric-domain-model",
+      "file": "01_task_centric_domain_model_.md",
+      "title": "Task-Centric Domain Model",
+      "url": "http://192.168.1.142:8180/n/buildvoc-pic2bimandroid-task-centric-domain-model"
+    },
+    {
+      "alias": "buildvoc-pic2bimandroid-path-tracking-system-ptservice",
+      "file": "02_path_tracking_system__ptservice__.md",
+      "title": "Path Tracking System (PTService)",
+      "url": "http://192.168.1.142:8180/n/buildvoc-pic2bimandroid-path-tracking-system-ptservice"
+    },
+    {
+      "alias": "buildvoc-pic2bimandroid-tiered-location-sourcing",
+      "file": "03_tiered_location_sourcing_.md",
+      "title": "Tiered Location Sourcing",
+      "url": "http://192.168.1.142:8180/n/buildvoc-pic2bimandroid-tiered-location-sourcing"
+    },
+    {
+      "alias": "buildvoc-pic2bimandroid-ekf-extended-kalman-filter-engine",
+      "file": "04_ekf__extended_kalman_filter__engine_.md",
+      "title": "EKF (Extended Kalman Filter) Engine",
+      "url": "http://192.168.1.142:8180/n/buildvoc-pic2bimandroid-ekf-extended-kalman-filter-engine"
+    },
+    {
+      "alias": "buildvoc-pic2bimandroid-persistence-layer-room-database",
+      "file": "05_persistence_layer__room_database__.md",
+      "title": "Persistence Layer (Room Database)",
+      "url": "http://192.168.1.142:8180/n/buildvoc-pic2bimandroid-persistence-layer-room-database"
+    },
+    {
+      "alias": "buildvoc-pic2bimandroid-syncqueue-orchestrator",
+      "file": "06_syncqueue_orchestrator_.md",
+      "title": "SyncQueue Orchestrator",
+      "url": "http://192.168.1.142:8180/n/buildvoc-pic2bimandroid-syncqueue-orchestrator"
+    },
+    {
+      "alias": "buildvoc-pic2bimandroid-changelog",
+      "file": "CHANGELOG.md",
+      "title": "Change Log",
+      "url": "http://192.168.1.142:8180/n/buildvoc-pic2bimandroid-changelog"
+    },
+    {
+      "alias": "buildvoc-pic2bimandroid-index",
+      "file": "index.md",
+      "title": "PIC2BIMAndroid Specification Index",
+      "url": "http://192.168.1.142:8180/n/buildvoc-pic2bimandroid-index"
+    }
+  ],
+  "generatedAt": "2026-10-03T15:49:26.638442+00:00",
+  "githubRepo": "buildvoc/PIC2BIMAndroid",
+  "namespace": "buildvoc/PIC2BIMAndroid",
+  "sourcePath": "/data/projects/PIC2BIMAndroid",
+  "version": 1
+}

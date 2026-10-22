@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "repositories": [
+    {
+      "id": "buildvoc/hedgedoc-nb",
+      "owner": "buildvoc",
+      "repo": "hedgedoc-nb",
+      "url": "https://github.com/buildvoc/hedgedoc-nb",
+      "cloneUrl": "https://github.com/buildvoc/hedgedoc-nb.git",
+      "path": "/data/projects/hedgedoc-nb",
+      "registeredAt": "2026-10-03T05:14:49.421Z",
+      "updatedAt": "2026-10-03T05:14:49.421Z"
+    }
+  ]
+}

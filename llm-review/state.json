@@ -1,0 +1,21 @@
+{
+  "67d31eff279eebf18583": {
+    "status": "approved",
+    "action": "feature",
+    "title": "Feature: Test the approved-task automation workflow by making a harmless README documentation change, then produce a .patch, .zip, SHA256SUMS and one deployment",
+    "githubUrl": "https://github.com/buildvoc/specdoc/issues/25",
+    "approvedAt": "2026-09-29T17:13:15.295Z"
+  },
+  "ad58f6ce73facfcadb53": {
+    "status": "approved",
+    "action": "feature",
+    "title": "Feature: Test the approved-task automation workflow by making a harmless README documentation change, then produce a .patch, .zip, SHA256SUMS and one deployment",
+    "githubUrl": "https://github.com/buildvoc/specdoc/issues/25",
+    "approvedAt": "2026-09-29T17:13:15.295Z",
+    "workerAttempts": 6,
+    "workerStartedAt": "2026-09-29T18:02:40.448285+00:00",
+    "workerStatus": "running",
+    "workerLastError": "command failed (1): git apply --check /tmp/specdoc-llm-worktree-uolrml7z/candidate.patch\nerror: patch failed: README.md:45\nerror: README.md: patch does not apply",
+    "workerFailedAt": "2026-09-29T18:02:36.355264+00:00"
+  }
+}

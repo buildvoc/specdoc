@@ -1,0 +1,262 @@
+'use strict'
+
+/* Detached worker for the Board Refresh + merge code paths feature. */
+
+const fs = require('fs')
+const path = require('path')
+const http = require('http')
+const https = require('https')
+
+const ROOT = process.env.SPECDOC_ROOT || '/data/projects/specdoc'
+const BOARD_URL = String(process.env.SPECDOC_BOARD_SELF_URL || 'http://127.0.0.1:8080').replace(/\/$/, '')
+const JOB_FILE = process.argv[2]
+if (!JOB_FILE) throw new Error('Job file argument required')
+
+function readJob () { return JSON.parse(fs.readFileSync(JOB_FILE, 'utf8')) }
+function writeJob (patch) {
+  const j = { ...readJob(), ...patch, updatedAt: new Date().toISOString() }
+  const tmp = `${JOB_FILE}.${process.pid}.tmp`
+  fs.writeFileSync(tmp, JSON.stringify(j, null, 2) + '\n')
+  fs.renameSync(tmp, JOB_FILE)
+  return j
+}
+function fail (error) {
+  const message = String(error?.stack || error?.message || error)
+  console.error(message)
+  try { writeJob({ status: 'error', phase: 'error', detail: 'Refresh + merge failed', error: message }) } catch {}
+  process.exitCode = 1
+}
+function sleep (ms) { return new Promise(resolve => setTimeout(resolve, ms)) }
+
+function decodeHtml (s) {
+  return String(s || '')
+    .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+}
+function attr (tag, name) {
+  const re = new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i')
+  const m = String(tag).match(re)
+  return m ? decodeHtml(m[1] ?? m[2] ?? m[3] ?? '') : ''
+}
+function hasAttr (tag, name) { return new RegExp(`\\b${name}(?:\\s|=|>|$)`, 'i').test(String(tag)) }
+
+function request (url, options = {}, redirects = 0) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url)
+    const lib = u.protocol === 'https:' ? https : http
+    const req = lib.request(u, {
+      method: options.method || 'GET',
+      headers: options.headers || {}
+    }, res => {
+      const chunks = []
+      res.on('data', c => chunks.push(c))
+      res.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8')
+        const status = res.statusCode || 0
+        if ([301, 302, 303, 307, 308].includes(status) && res.headers.location && redirects < 8) {
+          const next = new URL(res.headers.location, u).toString()
+          const method = status === 307 || status === 308 ? (options.method || 'GET') : 'GET'
+          return request(next, method === 'GET' ? {} : options, redirects + 1).then(resolve, reject)
+        }
+        resolve({ status, body, headers: res.headers, url: u.toString() })
+      })
+    })
+    req.on('error', reject)
+    if (options.body) req.write(options.body)
+    req.end()
+  })
+}
+
+function findRefreshForm (html) {
+  const forms = String(html).match(/<form\b[\s\S]*?<\/form>/gi) || []
+  for (const form of forms) {
+    const open = (form.match(/^<form\b[^>]*>/i) || [''])[0]
+    const cls = attr(open, 'class')
+    if (/\brefresh-form\b/i.test(cls) || /Refresh\s+specs/i.test(form)) return form
+  }
+  throw new Error('Standard Refresh specs form was not found on the Board page')
+}
+
+function formRequest (pageUrl, form) {
+  const open = (form.match(/^<form\b[^>]*>/i) || [''])[0]
+  const method = (attr(open, 'method') || 'GET').toUpperCase()
+  const action = attr(open, 'action') || pageUrl
+  const target = new URL(action, pageUrl)
+  const params = new URLSearchParams()
+
+  for (const tag of (form.match(/<input\b[^>]*>/gi) || [])) {
+    if (hasAttr(tag, 'disabled')) continue
+    const name = attr(tag, 'name')
+    if (!name) continue
+    const type = (attr(tag, 'type') || 'text').toLowerCase()
+    if (['submit', 'button', 'reset', 'file'].includes(type)) continue
+    if (['checkbox', 'radio'].includes(type) && !hasAttr(tag, 'checked')) continue
+    params.append(name, attr(tag, 'value'))
+  }
+
+  for (const block of (form.match(/<select\b[\s\S]*?<\/select>/gi) || [])) {
+    const openSelect = (block.match(/^<select\b[^>]*>/i) || [''])[0]
+    const name = attr(openSelect, 'name')
+    if (!name || hasAttr(openSelect, 'disabled')) continue
+    const options = block.match(/<option\b[\s\S]*?<\/option>/gi) || []
+    let chosen = options.find(x => hasAttr((x.match(/^<option\b[^>]*>/i) || [''])[0], 'selected')) || options[0]
+    if (chosen) params.append(name, attr((chosen.match(/^<option\b[^>]*>/i) || [''])[0], 'value'))
+  }
+
+  if (method === 'GET') {
+    for (const [k, v] of params) target.searchParams.append(k, v)
+    return { url: target.toString(), options: { method: 'GET' } }
+  }
+  const body = params.toString()
+  return {
+    url: target.toString(),
+    options: {
+      method,
+      body,
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(body)
+      }
+    }
+  }
+}
+
+function specFingerprint (dir) {
+  const rows = []
+  function walk (current) {
+    let entries = []
+    try { entries = fs.readdirSync(current, { withFileTypes: true }) } catch { return }
+    for (const e of entries) {
+      const full = path.join(current, e.name)
+      if (e.isDirectory()) walk(full)
+      else if (e.isFile() && e.name.toLowerCase().endsWith('.md')) {
+        const st = fs.statSync(full)
+        rows.push(`${path.relative(dir, full)}:${st.size}:${Math.floor(st.mtimeMs)}`)
+      }
+    }
+  }
+  walk(dir)
+  rows.sort()
+  return rows.join('|')
+}
+
+async function refreshProject (project, index, total) {
+  const pageUrl = `${BOARD_URL}/?ns=${encodeURIComponent(project.namespace)}`
+  const before = specFingerprint(project.outputDir)
+  const started = Date.now()
+
+  writeJob({
+    progress: Math.max(1, Math.floor((index / total) * 60)),
+    phase: 'refresh',
+    detail: `Standard Refresh specs ${index + 1}/${total}: ${project.namespace}\n${project.sourcePath}`
+  })
+
+  const page = await request(pageUrl)
+  if (page.status < 200 || page.status >= 400) throw new Error(`Board page for ${project.namespace} returned HTTP ${page.status}`)
+  const form = findRefreshForm(page.body)
+  const submit = formRequest(pageUrl, form)
+  const response = await request(submit.url, submit.options)
+  if (response.status < 200 || response.status >= 400) throw new Error(`Refresh specs failed for ${project.namespace}: HTTP ${response.status}`)
+
+  // If Refresh specs returns quickly because work is asynchronous, give generated
+  // Markdown a short window to change, then wait for it to stabilize. If nothing
+  // changes, treat that as a valid no-op refresh (source/specs may already be current).
+  let last = specFingerprint(project.outputDir)
+  let changed = last !== before
+  const responseMs = Date.now() - started
+  const graceUntil = Date.now() + (responseMs < 5000 ? 45000 : 5000)
+  let stable = 0
+
+  while (Date.now() < graceUntil || (changed && stable < 2)) {
+    await sleep(5000)
+    const now = specFingerprint(project.outputDir)
+    if (now !== before) changed = true
+    if (changed && now === last) stable++
+    else stable = 0
+    last = now
+    if (changed && stable >= 2) break
+  }
+
+  const count = last ? last.split('|').filter(Boolean).length : 0
+  if (!count) throw new Error(`Refresh specs produced no Markdown for ${project.namespace}: ${project.outputDir}`)
+  return { changed, count }
+}
+
+function mergeInputs (projects) {
+  const inputs = []
+  const excluded = /^(?:index|changelog|readme)\.md$/i
+  function walk (namespace, root, current) {
+    const entries = fs.readdirSync(current, { withFileTypes: true })
+    for (const e of entries) {
+      const full = path.join(current, e.name)
+      if (e.isDirectory()) walk(namespace, root, full)
+      else if (e.isFile() && e.name.toLowerCase().endsWith('.md') && !excluded.test(e.name)) {
+        inputs.push({ namespace, path: path.relative(root, full).split(path.sep).join('/') })
+      }
+    }
+  }
+  for (const p of projects) walk(p.namespace, p.outputDir, p.outputDir)
+  return inputs
+}
+
+async function mergeRefreshedSpecs (job) {
+  const inputs = mergeInputs(job.projects)
+  if (inputs.length < 2) throw new Error(`Only ${inputs.length} generated specification(s) found after refresh; need at least 2`)
+
+  writeJob({ progress: 65, phase: 'merge', specCount: inputs.length, detail: `Refresh complete. Merging ${inputs.length} generated specifications from ${job.projects.length} code paths.` })
+
+  const payload = JSON.stringify({
+    inputs,
+    title: job.title,
+    alias: job.alias,
+    model: job.model,
+    includeCodebase: false
+  })
+  const start = await request(`${BOARD_URL}/api/merge-specs`, {
+    method: 'POST',
+    body: payload,
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }
+  })
+  let mergeJob
+  try { mergeJob = JSON.parse(start.body) } catch { throw new Error(`Merge API returned HTTP ${start.status}: ${start.body.slice(0, 500)}`) }
+  if (start.status < 200 || start.status >= 300) throw new Error(mergeJob.error || `Merge API HTTP ${start.status}`)
+
+  writeJob({ mergeJobId: mergeJob.id, detail: `Merge job ${mergeJob.id} started from refreshed specifications.` })
+
+  for (;;) {
+    await sleep(3000)
+    const r = await request(`${BOARD_URL}/api/merge-specs/jobs/${encodeURIComponent(mergeJob.id)}`)
+    if (r.status !== 200) throw new Error(`Unable to poll merge job ${mergeJob.id}: HTTP ${r.status}`)
+    const m = JSON.parse(r.body)
+    const progress = 65 + Math.floor(Number(m.progress || 0) * 0.34)
+    writeJob({ progress: Math.min(99, progress), phase: 'merge', detail: `Merged-spec job ${m.status} — ${m.progress || 0}%\n${m.detail || ''}` })
+    if (m.status === 'done' || m.status === 'complete' || m.status === 'completed') return m
+    if (m.status === 'error' || m.status === 'failed') throw new Error(m.error || m.detail || 'Merged-spec job failed')
+  }
+}
+
+async function main () {
+  let job = readJob()
+  try {
+    for (let i = 0; i < job.projects.length; i++) {
+      await refreshProject(job.projects[i], i, job.projects.length)
+    }
+    job = readJob()
+    const merged = await mergeRefreshedSpecs(job)
+    writeJob({
+      status: 'done',
+      progress: 100,
+      phase: 'done',
+      detail: `Standard Refresh specs completed for ${job.projects.length} code paths; refreshed specifications merged and published.`,
+      url: merged.url || null,
+      mergedAlias: merged.alias || null,
+      mergedSpecCount: merged.specCount || job.specCount || null,
+      completedAt: new Date().toISOString()
+    })
+    console.log('MERGE_CODE_PATHS_COMPLETE')
+  } catch (error) {
+    fail(error)
+  }
+}
+
+main()

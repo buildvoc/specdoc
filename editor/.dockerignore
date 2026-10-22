@@ -1,6 +1,0 @@
-# Build context is editor/ itself. .work is the 147 MB maintenance checkout and
-# must never be sent to the daemon.
-.work
-.git
-README.md
-rebase.sh

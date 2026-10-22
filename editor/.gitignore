@@ -1,3 +1,0 @@
-# scratch checkout; its critic branch holds local feature commits on top of
-# the rebased fork. Until critic is pushed to a remote this is the only copy.
-.work/

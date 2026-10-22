@@ -1,0 +1,20 @@
+[Unit]
+Description=SpecDoc HedgeDoc 2 Read-only Board
+After=network-online.target specdoc-hd2-adapter.service
+Wants=network-online.target
+Requires=specdoc-hd2-adapter.service
+
+[Service]
+Type=simple
+User=hp
+Group=hp
+WorkingDirectory=/data/projects/specdoc
+EnvironmentFile=/data/projects/specdoc/.env
+ExecStart=/home/hp/.nvm/versions/node/v20.20.0/bin/node /data/projects/specdoc/hd2-board/server.js
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

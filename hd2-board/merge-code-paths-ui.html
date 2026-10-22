@@ -1,0 +1,45 @@
+<style id="specdoc-merge-codepaths-v10-style">
+#specdoc-merge-code-paths-dialog{width:min(820px,94vw);max-height:90vh;border:1px solid var(--border,#bbb);border-radius:12px;background:var(--surface,#fff);color:inherit;padding:0;box-shadow:0 18px 70px rgba(0,0,0,.35)}
+#specdoc-merge-code-paths-dialog::backdrop{background:rgba(0,0,0,.5)}
+.mcv10-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border,#ccc)}
+.mcv10-head h2{margin:0;font-size:1.15rem}.mcv10-body{padding:16px 18px;overflow:auto;max-height:72vh}.mcv10-muted{opacity:.72;font-size:.88rem}.mcv10-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.mcv10-grid label{display:grid;gap:5px}.mcv10-dropdown{border:1px solid var(--border,#ccc);border-radius:8px;margin:14px 0}.mcv10-dropdown>summary{cursor:pointer;font-weight:650;padding:11px 12px}.mcv10-list{border-top:1px solid var(--border,#ccc);max-height:340px;overflow:auto}.mcv10-row{display:flex;gap:9px;align-items:flex-start;padding:9px 11px;border-bottom:1px solid rgba(127,127,127,.15)}.mcv10-row:last-child{border-bottom:0}.mcv10-path{font-family:monospace;font-size:.82rem;opacity:.8;word-break:break-all}.mcv10-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin:12px 0}.mcv10-status{white-space:pre-wrap;padding:9px;border-radius:8px;background:rgba(127,127,127,.08);min-height:42px}.mcv10-history{margin-top:15px;border-top:1px solid var(--border,#ccc);padding-top:10px}.mcv10-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}.mcv10-history a{word-break:break-all}@media(max-width:700px){.mcv10-grid{grid-template-columns:1fr}}
+</style>
+<dialog id="specdoc-merge-code-paths-dialog">
+  <div class="mcv10-head"><h2>Merge repos</h2><button type="button" id="mcv10-close">Close</button></div>
+  <div class="mcv10-body">
+    <p class="mcv10-muted">Select two or more registered code paths. The selected repositories are combined into one temporary codebase and sent through one standard <strong>Refresh specs</strong> run.</p>
+    <div class="mcv10-grid">
+      <label>Combined codebase name<input id="mcv10-alias" value="combined-codebase"></label>
+      <label>Filter code paths<input id="mcv10-filter" placeholder="project or /data/projects/path"></label>
+    </div>
+    <details class="mcv10-dropdown" open>
+      <summary id="mcv10-summary">Code paths · 0 selected</summary>
+      <div class="mcv10-tools" style="padding:0 11px"><button type="button" id="mcv10-all">Select all</button><button type="button" id="mcv10-none">Clear</button><strong id="mcv10-count">0 selected</strong></div>
+      <div id="mcv10-list" class="mcv10-list">Loading…</div>
+    </details>
+    <div class="mcv10-actions"><button type="button" id="mcv10-run">Run ONE Refresh specs</button></div>
+    <div id="mcv10-status" class="mcv10-status">Idle</div>
+    <div class="mcv10-history"><strong>Recent repo merges</strong><div id="mcv10-history-list" class="mcv10-muted">Loading…</div></div>
+  </div>
+</dialog>
+<script id="specdoc-merge-codepaths-v10-script">
+(() => {
+  const q=s=>document.querySelector(s), qa=s=>[...document.querySelectorAll(s)]
+  const dialog=q('#specdoc-merge-code-paths-dialog'); if(!dialog) return
+  const legacy=q('#merge-open'); if(legacy && !legacy.closest('dialog')) legacy.remove()
+  const host=document.querySelector('.header-actions')||document.querySelector('.refresh-form')||document.body
+  let open=q('#merge-repos-open');if(!open)open=document.createElement('button');open.type='button';open.textContent='Merge repos';open.id='merge-repos-open';host.appendChild(open)
+  let jobId=null,poll=null,catalog=[]
+  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
+  function selected(){return qa('.mcv10-check:checked').map(x=>x.dataset.ns)}
+  function count(){const n=selected().length;q('#mcv10-count').textContent=n+' selected';q('#mcv10-summary').textContent='Code paths · '+n+' selected';q('#mcv10-run').disabled=n<2}
+  function render(){const f=q('#mcv10-filter').value.trim().toLowerCase();q('#mcv10-list').innerHTML=catalog.filter(p=>!f||(p.namespace+' '+p.displayName+' '+p.sourcePath).toLowerCase().includes(f)).map(p=>`<label class="mcv10-row"><input type="checkbox" class="mcv10-check" data-ns="${esc(p.namespace)}" ${p.sourceAvailable?'':'disabled'}><span><strong>${esc(p.displayName)}</strong> <span class="mcv10-muted">${esc(p.namespace)}</span><br><span class="mcv10-path">${esc(p.sourcePath)}</span>${p.sourceAvailable?'':'<br><span class="mcv10-muted">SOURCE PATH MISSING</span>'}</span></label>`).join('')||'<p class="mcv10-muted" style="padding:10px">No code paths found.</p>';qa('.mcv10-check').forEach(x=>x.onchange=count);count()}
+  async function load(){const r=await fetch('/api/merge-code-paths/catalog',{cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.error||('HTTP '+r.status));catalog=d.projects||[];render();await history()}
+  async function history(){const r=await fetch('/api/merge-code-paths/jobs',{cache:'no-store'});if(!r.ok)return;const d=await r.json();q('#mcv10-history-list').innerHTML=(d.history||[]).slice(0,8).map(j=>{const t=esc(new Date(j.completedAt||j.createdAt).toLocaleString());const name=esc(j.combinedNamespace||j.title||j.id);return `<div>${j.url?`<a href="${esc(j.url)}">${name}</a>`:name} — ${j.projectCount||j.projects?.length||0} repos — ${t}</div>`}).join('')||'No repo merges yet.'}
+  async function pollJob(){if(!jobId)return;const r=await fetch('/api/merge-code-paths/jobs/'+encodeURIComponent(jobId),{cache:'no-store'});const j=await r.json();if(!r.ok){q('#mcv10-status').textContent=j.error||('HTTP '+r.status);return}q('#mcv10-status').textContent=(j.status||'running').toUpperCase()+' — '+(j.progress||0)+'%\n'+(j.detail||'');if(j.status==='done'||j.status==='error'||j.status==='failed'){clearInterval(poll);poll=null;q('#mcv10-run').disabled=false;await history()}}
+  q('#mcv10-run').onclick=async()=>{const projects=selected();if(projects.length<2)return;q('#mcv10-run').disabled=true;q('#mcv10-status').textContent='Starting ONE standard Refresh specs run…';const payload={projects,alias:q('#mcv10-alias').value.trim()};const r=await fetch('/api/merge-code-paths',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});const d=await r.json();if(!r.ok){q('#mcv10-status').textContent=d.error||('HTTP '+r.status);q('#mcv10-run').disabled=false;return}jobId=d.id;await pollJob();poll=setInterval(pollJob,2500)}
+  q('#mcv10-close').onclick=()=>dialog.close();open.onclick=()=>{dialog.showModal();load().catch(e=>q('#mcv10-status').textContent=e.message)}
+  q('#mcv10-filter').oninput=render;q('#mcv10-all').onclick=()=>{qa('.mcv10-check:not(:disabled)').forEach(x=>x.checked=true);count()};q('#mcv10-none').onclick=()=>{qa('.mcv10-check').forEach(x=>x.checked=false);count()}
+  count()
+})()
+</script>

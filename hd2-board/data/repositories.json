@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "repositories": [
+    {
+      "id": "buildvoc/annif-client",
+      "owner": "buildvoc",
+      "repo": "annif-client",
+      "url": "https://github.com/buildvoc/annif-client",
+      "cloneUrl": "https://github.com/buildvoc/Annif-client.git",
+      "path": "/data/projects/pocketflow-tutorial-codebase-knowledge",
+      "branch": "building-memex-picture-evidence-associated-trails",
+      "discovered": true,
+      "registeredAt": "2026-10-03T05:19:39.101Z",
+      "updatedAt": "2026-10-04T11:09:44.847Z"
+    },
+    {
+      "id": "buildvoc/generativeaiexamples",
+      "owner": "buildvoc",
+      "repo": "generativeaiexamples",
+      "url": "https://github.com/buildvoc/generativeaiexamples",
+      "cloneUrl": "https://github.com/buildvoc/GenerativeAIExamples.git",
+      "path": "/data/projects/chat-llama-nemotron",
+      "branch": "feat/openwebui-docling-picture-tool",
+      "discovered": true,
+      "registeredAt": "2026-10-03T05:19:39.101Z",
+      "updatedAt": "2026-10-04T11:09:44.847Z"
+    },
+    {
+      "id": "buildvoc/granite-docling-demo",
+      "owner": "buildvoc",
+      "repo": "granite-docling-demo",
+      "url": "https://github.com/buildvoc/granite-docling-demo",
+      "cloneUrl": "https://github.com/buildvoc/granite-docling-demo.git",
+      "path": "/data/projects/granite-docling-demo",
+      "branch": "main",
+      "discovered": true,
+      "registeredAt": "2026-10-03T05:19:39.101Z",
+      "updatedAt": "2026-10-04T11:09:44.847Z"
+    },
+    {
+      "id": "buildvoc/hedgedoc",
+      "owner": "buildvoc",
+      "repo": "hedgedoc",
+      "url": "https://github.com/buildvoc/hedgedoc",
+      "cloneUrl": "https://github.com/buildvoc/hedgedoc.git",
+      "path": "/data/projects/hedgedoc",
+      "branch": "develop",
+      "discovered": true,
+      "registeredAt": "2026-10-03T05:19:39.101Z",
+      "updatedAt": "2026-10-04T11:09:44.847Z"
+    },
+    {
+      "id": "buildvoc/hedgedoc-nb",
+      "owner": "buildvoc",
+      "repo": "hedgedoc-nb",
+      "url": "https://github.com/buildvoc/hedgedoc-nb",
+      "cloneUrl": "https://github.com/buildvoc/hedgedoc-nb.git",
+      "path": "/data/projects/hedgedoc-nb-frontend",
+      "branch": "main",
+      "discovered": true,
+      "registeredAt": "2026-10-03T05:19:39.101Z",
+      "updatedAt": "2026-10-04T11:09:44.847Z"
+    },
+    {
+      "id": "buildvoc/pic2bim",
+      "owner": "buildvoc",
+      "repo": "pic2bim",
+      "url": "https://github.com/buildvoc/pic2bim",
+      "cloneUrl": "https://github.com/buildvoc/PIC2BIM.git",
+      "path": "/data/projects/pic2bim",
+      "branch": "",
+      "discovered": true,
+      "registeredAt": "2026-10-03T05:19:39.101Z",
+      "updatedAt": "2026-10-04T11:09:44.847Z"
+    },
+    {
+      "id": "buildvoc/pic2bim-ios",
+      "owner": "buildvoc",
+      "repo": "pic2bim-ios",
+      "url": "https://github.com/buildvoc/pic2bim-ios",
+      "cloneUrl": "https://github.com/buildvoc/PIC2BIM-IOS.git",
+      "path": "/data/projects/PIC2BIM-IOS",
+      "registeredAt": "2026-10-04T06:29:15.557Z",
+      "updatedAt": "2026-10-04T11:09:44.847Z",
+      "branch": "main",
+      "discovered": true
+    },
+    {
+      "id": "buildvoc/pic2bimandroid",
+      "owner": "buildvoc",
+      "repo": "pic2bimandroid",
+      "url": "https://github.com/buildvoc/pic2bimandroid",
+      "cloneUrl": "https://github.com/buildvoc/PIC2BIMAndroid.git",
+      "path": "/data/projects/PIC2BIMAndroid",
+      "registeredAt": "2026-10-03T05:20:44.290Z",
+      "updatedAt": "2026-10-04T11:09:44.847Z",
+      "branch": "main",
+      "discovered": true
+    },
+    {
+      "id": "buildvoc/specdoc",
+      "owner": "buildvoc",
+      "repo": "specdoc",
+      "url": "https://github.com/buildvoc/specdoc",
+      "cloneUrl": "https://github.com/buildvoc/specdoc.git",
+      "path": "/data/projects/specdoc",
+      "branch": "hd2-compat",
+      "discovered": true,
+      "registeredAt": "2026-10-03T05:19:39.101Z",
+      "updatedAt": "2026-10-04T11:09:44.847Z"
+    },
+    {
+      "id": "cytoscape/cytoscape-web",
+      "owner": "cytoscape",
+      "repo": "cytoscape-web",
+      "url": "https://github.com/cytoscape/cytoscape-web",
+      "cloneUrl": "https://github.com/cytoscape/cytoscape-web.git",
+      "path": "/data/projects/cytoscape-web-test",
+      "branch": "development",
+      "discovered": true,
+      "registeredAt": "2026-10-03T05:19:39.101Z",
+      "updatedAt": "2026-10-04T11:09:44.847Z"
+    },
+    {
+      "id": "llm-wiki",
+      "owner": "",
+      "repo": "llm-wiki",
+      "url": "",
+      "cloneUrl": "",
+      "path": "/data/projects/llm-wiki",
+      "branch": "okf-memex",
+      "discovered": true,
+      "registeredAt": "2026-10-03T05:19:39.101Z",
+      "updatedAt": "2026-10-04T11:09:44.847Z"
+    },
+    {
+      "id": "mkdocs",
+      "owner": "",
+      "repo": "mkdocs",
+      "url": "git@github.com-pic2bim_docs:buildvoc/PIC2BIM-DOCS.git",
+      "cloneUrl": "git@github.com-pic2bim_docs:buildvoc/PIC2BIM-DOCS.git",
+      "path": "/data/projects/mkdocs",
+      "branch": "mkdocs-graph-typed-colors-v1",
+      "discovered": true,
+      "registeredAt": "2026-10-03T05:19:39.101Z",
+      "updatedAt": "2026-10-04T11:09:44.847Z"
+    },
+    {
+      "id": "sandraschi/qcad-mcp",
+      "owner": "sandraschi",
+      "repo": "qcad-mcp",
+      "url": "https://github.com/sandraschi/qcad-mcp",
+      "cloneUrl": "https://github.com/sandraschi/qcad-mcp.git",
+      "path": "/data/projects/qcad-mcp",
+      "branch": "feat/scripts-api-status",
+      "discovered": true,
+      "registeredAt": "2026-10-03T05:19:39.101Z",
+      "updatedAt": "2026-10-04T11:09:44.847Z"
+    },
+    {
+      "id": "specdoc-authoring",
+      "owner": "",
+      "repo": "specdoc-authoring",
+      "url": "",
+      "cloneUrl": "",
+      "path": "/data/projects/specdoc-authoring",
+      "branch": "master",
+      "discovered": true,
+      "registeredAt": "2026-10-03T05:19:39.101Z",
+      "updatedAt": "2026-10-04T11:09:44.847Z"
+    }
+  ]
+}

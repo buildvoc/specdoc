@@ -1,0 +1,159 @@
+<style id="specdoc-merge-style">
+#specdoc-merge-dialog{width:min(1050px,94vw);max-height:90vh;border:1px solid var(--border,#bbb);border-radius:12px;background:var(--surface,#fff);color:inherit;padding:0;box-shadow:0 18px 70px rgba(0,0,0,.35)}
+#specdoc-merge-dialog::backdrop{background:rgba(0,0,0,.5)}
+.merge-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border,#ccc)}
+.merge-head h2{margin:0;font-size:1.15rem}.merge-body{padding:16px 18px;overflow:auto;max-height:72vh}.merge-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.merge-grid label{display:grid;gap:5px}.merge-grid .wide{grid-column:1/-1}.merge-project{border:1px solid var(--border,#ccc);border-radius:8px;margin:9px 0;padding:8px 10px}.merge-project summary{cursor:pointer;font-weight:650}.merge-spec-list{display:grid;gap:5px;padding:8px 2px 2px 18px}.merge-spec-list label{display:flex;gap:8px;align-items:flex-start}.merge-tools,.merge-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}.merge-actions{justify-content:flex-end;border-top:1px solid var(--border,#ccc);padding-top:12px}.merge-status{white-space:pre-wrap;padding:9px;border-radius:8px;background:rgba(127,127,127,.08);min-height:38px}.merge-history{margin-top:16px;border-top:1px solid var(--border,#ccc);padding-top:10px}.merge-history a{word-break:break-all}.merge-muted{opacity:.7;font-size:.86rem}.merge-project-count{font-size:.83rem;opacity:.72;margin-left:6px}.merge-codebase span{display:flex;gap:8px;align-items:center;font-weight:650}.merge-codebase small{font-size:.82rem;opacity:.72;font-weight:400}
+.mcp-dropdown{border:1px solid var(--border,#ccc);border-radius:8px;margin:12px 0}.mcp-dropdown>summary{cursor:pointer;font-weight:650;padding:10px 12px}.mcp-dropdown-body{border-top:1px solid var(--border,#ccc);padding:10px 12px}.mcp-list{border:1px solid var(--border,#ccc);border-radius:8px;margin-top:10px;max-height:280px;overflow:auto}.mcp-row{display:flex!important;gap:9px;align-items:flex-start;padding:8px 10px;border-bottom:1px solid rgba(127,127,127,.15)}.mcp-row:last-child{border-bottom:0}.mcp-path{font-family:monospace;font-size:.82rem;opacity:.8;word-break:break-all}.mcp-progress{font-variant-numeric:tabular-nums}
+@media(max-width:760px){.merge-grid{grid-template-columns:1fr}.merge-grid .wide{grid-column:auto}}
+</style>
+<dialog id="specdoc-merge-dialog">
+  <div class="merge-head"><h2>Merge</h2><button type="button" id="merge-close">Close</button></div>
+  <div class="merge-body">
+    <section class="merge-panel" id="merge-panel-specs">
+      <p class="merge-muted">Merge selected specifications, or choose multiple code paths below to run the Board's standard <strong>Refresh specs</strong> workflow first.</p>
+      <div class="merge-grid">
+        <label>Title<input id="merge-title" value="Merged Cross-Project Specification"></label>
+        <label>HedgeDoc alias<input id="merge-alias" value="merged-cross-project-specification"></label>
+        <label>Ollama model<input id="merge-model" value="gemma4:26b"></label>
+        <label>Filter specifications<input id="merge-filter" placeholder="project, title or filename"></label>
+        <label class="wide merge-codebase"><span><input type="checkbox" id="merge-codebase"> Merge with codebase (direct scan — slow)</span><small>Legacy mode for specification selection only. When code paths are selected below, this option is ignored and standard Refresh specs is used instead.</small></label>
+      </div>
+
+      <details id="mcp-dropdown" class="mcp-dropdown">
+        <summary id="mcp-summary">Refresh code paths before merge · 0 selected</summary>
+        <div class="mcp-dropdown-body">
+          <p class="merge-muted">Select two or more registered <code>/data/projects/…</code> paths. Each path runs <code>POST /refresh-specdoc</code> and waits for <code>/refresh-status</code> = <strong>complete</strong> before starting the next path. The refreshed generated specifications are then merged.</p>
+          <label>Filter code paths<input id="mcp-filter" placeholder="namespace or /data/projects/path"></label>
+          <div class="merge-tools"><button type="button" id="mcp-all">Select all</button><button type="button" id="mcp-none">Clear</button><strong id="mcp-count">0 code paths selected</strong></div>
+          <div id="mcp-list" class="mcp-list">Loading…</div>
+        </div>
+      </details>
+
+      <div class="merge-tools"><button type="button" id="merge-all">Select all specs</button><button type="button" id="merge-none">Clear specs</button><strong id="merge-selection">0 selected</strong></div>
+      <div id="merge-catalog">Loading…</div>
+      <div class="merge-actions"><button type="button" id="mcp-cancel" disabled>Cancel refresh orchestration</button><button type="button" id="merge-run">Merge &amp; publish to HedgeDoc</button></div>
+      <div id="merge-status" class="merge-status mcp-progress">Idle</div>
+      <div class="merge-history"><strong>Recent merged specifications</strong><div id="merge-history-list" class="merge-muted">Loading…</div></div>
+    </section>
+  </div>
+</dialog>
+<script id="specdoc-merge-script">
+(() => {
+  const q=s=>document.querySelector(s), qa=s=>[...document.querySelectorAll(s)]
+  const dialog=q('#specdoc-merge-dialog'); if(!dialog) return
+  const host=document.querySelector('.header-actions') || document.querySelector('.refresh-form') || document.body
+  const mergeButtons=qa('button').filter(b=>b.textContent.trim()==='Merge' && !b.closest('dialog'))
+  let open=q('#merge-open') || mergeButtons[0]
+  if(!open){open=document.createElement('button')}
+  open.type='button'; open.textContent='Merge'; open.id='merge-open'
+  mergeButtons.forEach(b=>{if(b!==open)b.remove()})
+  host.appendChild(open)
+
+  let poll=null, refreshController=null, cachedCatalog=null
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms))
+  function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+  function slug(s){return String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,100)}
+  q('#merge-close').onclick=()=>dialog.close()
+  open.onclick=()=>{dialog.showModal();loadAll()}
+
+  function selected(){return qa('.merge-spec-check:checked').map(x=>({namespace:x.dataset.ns,path:x.dataset.path}))}
+  function updateCount(){const xs=selected(),ps=new Set(xs.map(x=>x.namespace));q('#merge-selection').textContent=xs.length+' specifications across '+ps.size+' projects'}
+  q('#merge-title').addEventListener('input',()=>{if(!q('#merge-alias').dataset.touched)q('#merge-alias').value=slug(q('#merge-title').value)})
+  q('#merge-alias').addEventListener('input',()=>q('#merge-alias').dataset.touched='1')
+  q('#merge-all').onclick=()=>{qa('.merge-spec-check').filter(x=>x.closest('.merge-project').style.display!=='none').forEach(x=>x.checked=true);updateCount()}
+  q('#merge-none').onclick=()=>{qa('.merge-spec-check').forEach(x=>x.checked=false);updateCount()}
+  q('#merge-filter').addEventListener('input',()=>{const n=q('#merge-filter').value.toLowerCase().trim();qa('.merge-project').forEach(p=>{const ph=(p.dataset.search||'').includes(n);let any=false;p.querySelectorAll('.merge-spec-row').forEach(row=>{const show=!n||ph||(row.dataset.search||'').includes(n);row.style.display=show?'':'none';if(show)any=true});p.style.display=any?'':'none'})})
+
+  async function getCatalog(){const r=await fetch('/api/merge-specs/catalog',{cache:'no-store'});if(!r.ok)throw new Error('Merge catalog HTTP '+r.status);return await r.json()}
+  async function loadCatalog(){
+    const data=await getCatalog(); cachedCatalog=data
+    q('#merge-model').value=data.defaultModel||q('#merge-model').value
+    q('#merge-catalog').innerHTML=data.projects.map((p,pi)=>`<details class="merge-project" open data-search="${esc((p.namespace+' '+p.displayName).toLowerCase())}"><summary><label><input type="checkbox" class="merge-project-check" data-project="${pi}"> ${esc(p.displayName)}</label><span class="merge-project-count">${p.files.length} specs</span></summary><div class="merge-spec-list">${p.files.map(f=>`<label class="merge-spec-row" data-search="${esc((f.title+' '+f.path).toLowerCase())}"><input type="checkbox" class="merge-spec-check" data-project="${pi}" data-ns="${esc(f.namespace)}" data-path="${esc(f.path)}"> <span><strong>${esc(f.title)}</strong><br><span class="merge-muted">${esc(f.path)}</span></span></label>`).join('')}</div></details>`).join('')||'<p>No registered specifications found.</p>'
+    qa('.merge-spec-check').forEach(x=>x.onchange=updateCount);qa('.merge-project-check').forEach(x=>x.onchange=()=>{qa('.merge-spec-check[data-project="'+x.dataset.project+'"]').forEach(y=>y.checked=x.checked);updateCount()});updateCount()
+    renderPathCatalog(data)
+  }
+  function renderPathCatalog(data){
+    q('#mcp-list').innerHTML=data.projects.map(p=>`<label class="mcp-row" data-search="${esc((p.namespace+' '+p.displayName+' '+(p.sourcePath||'')).toLowerCase())}"><input type="checkbox" class="mcp-check" data-ns="${esc(p.namespace)}" ${p.sourceAvailable?'':'disabled'}><span><strong>${esc(p.displayName)}</strong> <span class="merge-muted">${esc(p.namespace)}</span><br><span class="mcp-path">${esc(p.sourcePath||'(no registered sourcePath)')}</span><br><span class="merge-muted">${p.files.length} current Markdown documents${p.sourceAvailable?'':' — SOURCE PATH MISSING'}</span></span></label>`).join('')||'<p class="merge-muted">No registered code paths found.</p>'
+    qa('.mcp-check').forEach(x=>x.onchange=updatePathCount); updatePathCount()
+  }
+  function selectedPaths(){return qa('.mcp-check:checked').map(x=>x.dataset.ns)}
+  function selectedProjects(){const wanted=new Set(selectedPaths());return (cachedCatalog?.projects||[]).filter(p=>wanted.has(p.namespace))}
+  function updatePathCount(){const n=selectedPaths().length;q('#mcp-count').textContent=n+' code paths selected';q('#mcp-summary').textContent='Refresh code paths before merge · '+n+' selected';q('#merge-run').textContent=n?'Refresh selected code paths + merge':'Merge & publish to HedgeDoc';q('#merge-codebase').disabled=n>0}
+  q('#mcp-all').onclick=()=>{qa('.mcp-row').filter(r=>r.style.display!=='none').forEach(r=>{const x=r.querySelector('.mcp-check');if(x&&!x.disabled)x.checked=true});updatePathCount()}
+  q('#mcp-none').onclick=()=>{qa('.mcp-check').forEach(x=>x.checked=false);updatePathCount()}
+  q('#mcp-filter').addEventListener('input',()=>{const n=q('#mcp-filter').value.toLowerCase().trim();qa('.mcp-row').forEach(r=>r.style.display=!n||(r.dataset.search||'').includes(n)?'':'none')})
+
+  async function loadJobs(){const r=await fetch('/api/merge-specs/jobs',{cache:'no-store'});if(!r.ok)return;const data=await r.json();q('#merge-history-list').innerHTML=(data.history||[]).slice(0,12).map(h=>`<div><a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a> — ${h.specCount} specs / ${h.projectCount} projects${h.includeCodebase?` + codebase (${h.sourceFileCount||0} files)`:''} — ${esc(h.model)}</div>`).join('')||'No merges yet.';if(data.active){showJob(data.active);pollJob(data.active.id)}}
+  async function loadAll(){try{await Promise.all([loadCatalog(),loadJobs()])}catch(e){q('#merge-status').textContent='Error: '+e.message}}
+  function showJob(j){q('#merge-run').disabled=j.status==='running';q('#merge-status').innerHTML=`${esc(String(j.status||'').toUpperCase())} — ${Number(j.progress||0)}%${j.includeCodebase?' — CODEBASE ON':''}\n${esc(j.detail||'')}${j.url?`\n<a href="${esc(j.url)}" target="_blank" rel="noopener">Open merged HedgeDoc specification</a>`:''}${j.error?`\n${esc(j.error)}`:''}`}
+  function pollJob(id,onUpdate){clearInterval(poll);poll=setInterval(async()=>{try{const r=await fetch('/api/merge-specs/jobs/'+encodeURIComponent(id),{cache:'no-store'});if(!r.ok)return;const j=await r.json();showJob(j);if(onUpdate)onUpdate(j);if(j.status!=='running'){clearInterval(poll);poll=null;loadJobs()}}catch{}},2000)}
+  async function refreshNamespace(project,index,total,signal){
+    const namespace=project.namespace
+    const sourcePath=String(project.sourcePath||'').trim()
+    if(!sourcePath)throw new Error(`No registered sourcePath for ${namespace}`)
+
+    q('#merge-status').textContent=`REFRESH ${index+1}/${total}\n${namespace}\nStarting standard Refresh specs…`
+    const body=new URLSearchParams(); body.set('path',sourcePath)
+    const start=await fetch('/refresh-specdoc',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body,signal})
+    const started=await start.json().catch(()=>({}))
+    if(!start.ok)throw new Error(started.error||`Refresh specs ${namespace}: HTTP ${start.status}`)
+
+    for(;;){
+      await sleep(2000)
+      const response=await fetch('/refresh-status',{cache:'no-store',signal})
+      if(!response.ok)throw new Error(`Refresh status ${namespace}: HTTP ${response.status}`)
+      const data=await response.json()
+      const pct=Number(data.progress||0)
+      const phase=String(data.phase||'Refresh specs')
+      q('#merge-status').textContent=`REFRESH ${index+1}/${total} — ${pct}%\n${namespace}\n${phase}`
+      if(data.status==='running')continue
+      if(data.status==='complete')break
+      if(data.status==='failed')throw new Error(`Refresh specs failed for ${namespace} (exit ${data.exitCode})`)
+      if(data.status==='idle')continue
+      throw new Error(`Unexpected refresh status for ${namespace}: ${data.status||'unknown'}`)
+    }
+
+    const after=await getCatalog(); cachedCatalog=after
+    const refreshed=(after.projects||[]).find(x=>x.namespace===namespace)
+    if(!refreshed||!(refreshed.files||[]).length)throw new Error(`Refresh specs produced no Markdown for ${namespace}`)
+    q('#merge-status').textContent=`REFRESH ${index+1}/${total} COMPLETE\n${namespace}\n${refreshed.files.length} Markdown documents available.`
+  }
+  function refreshedInputs(data,namespaces){
+    const selected=new Set(namespaces); const excluded=/^(?:index|changelog|readme)\.md$/i; const out=[]
+    for(const p of data.projects||[]){if(!selected.has(p.namespace))continue;for(const f of p.files||[]){const base=String(f.path||'').split('/').pop();if(excluded.test(base))continue;out.push({namespace:p.namespace,path:f.path})}}
+    return out
+  }
+  q('#mcp-cancel').onclick=()=>{if(refreshController){refreshController.abort();refreshController=null;q('#merge-status').textContent='Browser orchestration cancelled. A Refresh specs request already accepted by the server may continue independently.';q('#merge-run').disabled=false;q('#mcp-cancel').disabled=true}}
+  q('#merge-run').onclick=async()=>{
+    const namespaces=selectedPaths()
+    if(!namespaces.length){
+      const inputs=selected()
+      if(inputs.length<2){q('#merge-status').textContent='Select at least two specifications, or select at least two code paths in the dropdown.';return}
+      const payload={inputs,title:q('#merge-title').value.trim(),alias:q('#merge-alias').value.trim(),model:q('#merge-model').value.trim()||'gemma4:26b',includeCodebase:q('#merge-codebase').checked}
+      q('#merge-run').disabled=true;q('#merge-status').textContent='Starting merge…'
+      try{const r=await fetch('/api/merge-specs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const j=await r.json();if(!r.ok)throw new Error(j.error||JSON.stringify(j));showJob(j);pollJob(j.id)}catch(e){q('#merge-run').disabled=false;q('#merge-status').textContent='Error: '+e.message}
+      return
+    }
+
+    if(namespaces.length<2){q('#merge-status').textContent='Select at least two code paths.';return}
+    q('#merge-run').disabled=true;q('#mcp-cancel').disabled=false;refreshController=new AbortController()
+    try{
+      const projects=selectedProjects();if(projects.length!==namespaces.length)throw new Error('Selected project catalog changed; reopen Merge and try again')
+      for(let i=0;i<projects.length;i++)await refreshNamespace(projects[i],i,projects.length,refreshController.signal)
+      q('#merge-status').textContent='REFRESH COMPLETE\nLoading refreshed specification catalog…'
+      const data=await getCatalog();cachedCatalog=data;renderPathCatalog(data);const inputs=refreshedInputs(data,namespaces)
+      if(inputs.length<2)throw new Error(`Only ${inputs.length} generated specification(s) available after refresh`)
+      q('#merge-status').textContent=`MERGE STARTING
+${inputs.length} refreshed specifications across ${namespaces.length} code paths
+Direct codebase scan: OFF`
+      const payload={inputs,title:q('#merge-title').value.trim(),alias:q('#merge-alias').value.trim(),model:q('#merge-model').value.trim()||'gemma4:26b',includeCodebase:false}
+      const r=await fetch('/api/merge-specs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:refreshController.signal});const j=await r.json();if(!r.ok)throw new Error(j.error||JSON.stringify(j))
+      q('#mcp-cancel').disabled=true;refreshController=null
+      pollJob(j.id,j=>{q('#merge-status').innerHTML=`MERGE ${esc(String(j.status||'').toUpperCase())} — ${Number(j.progress||0)}%
+${esc(j.detail||'')}${j.url?`
+<a href="${esc(j.url)}" target="_blank" rel="noopener">Open merged HedgeDoc specification</a>`:''}${j.error?`
+${esc(j.error)}`:''}`;if(j.status!=='running')q('#merge-run').disabled=false})
+    }catch(e){q('#merge-run').disabled=false;q('#mcp-cancel').disabled=true;refreshController=null;q('#merge-status').textContent=(e.name==='AbortError'?'Cancelled':'Error: '+e.message)}
+  }
+})()
+</script>

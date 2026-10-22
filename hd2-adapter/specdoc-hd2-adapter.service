@@ -1,0 +1,23 @@
+[Unit]
+Description=SpecDoc HedgeDoc 2 adapter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hp
+Group=hp
+WorkingDirectory=/data/projects/specdoc/hd2-adapter
+Environment=HD2_ENV_FILE=/data/projects/hedgedoc/.env
+Environment=SPECDOC_HD2_HOST=127.0.0.1
+Environment=SPECDOC_HD2_PORT=8081
+ExecStart=/home/hp/.nvm/versions/node/v20.20.0/bin/node /data/projects/specdoc/hd2-adapter/server.js
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/data/projects/specdoc/hd2-adapter
+
+[Install]
+WantedBy=multi-user.target

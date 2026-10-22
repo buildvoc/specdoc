@@ -1,0 +1,28 @@
+--- critic-markup.js
++++ critic-markup.js
+@@ -1,15 +1,20 @@
+ function parseComment (content) {
+   const trimmed = String(content || '').trim()
+ 
+-  // Standard form: @hp: message
+-  const colon = /^@([A-Za-z0-9._-]+):\s*([\s\S]*)$/.exec(trimmed)
++  // Standard forms:
++  //   @hp: message
++  //   @ hp: message
++  const colon = /^@\s*([A-Za-z0-9._-]+):\s*([\s\S]*)$/.exec(trimmed)
+   if (colon) {
+     return { author: colon[1], text: colon[2] }
+   }
+ 
+-  // Friendly form: @hp @llm message
+-  // Do not interpret bare "@llm ..." as an author.
+-  const spaced = /^@([A-Za-z0-9._-]+)\s+([\s\S]*)$/.exec(trimmed)
++  // Friendly forms:
++  //   @hp @llm message
++  //   @ hp @llm message
++  //
++  // Do not interpret bare @llm or @ llm as an author.
++  const spaced = /^@\s*([A-Za-z0-9._-]+)\s+([\s\S]*)$/.exec(trimmed)
+   if (spaced && spaced[1].toLowerCase() !== 'llm') {
+     return { author: spaced[1], text: spaced[2] }
+   }

@@ -1,0 +1,66 @@
+{
+  "aliasPrefix": "buildvoc-pic2bim",
+  "branch": null,
+  "commit": "ab00a78b2731234f53b1b3a46629f1c33c59f307",
+  "files": [
+    {
+      "alias": "buildvoc-pic2bim-unified-task-user-management-inertia-js",
+      "file": "01_unified_task___user_management__inertia_js__.md",
+      "title": "Unified Task & User Management (Inertia.js)",
+      "url": "http://192.168.1.142:8180/n/buildvoc-pic2bim-unified-task-user-management-inertia-js"
+    },
+    {
+      "alias": "buildvoc-pic2bim-building-attribute-extraction-exif",
+      "file": "02_building_attribute_extraction__exif__.md",
+      "title": "Building Attribute Extraction (EXIF)",
+      "url": "http://192.168.1.142:8180/n/buildvoc-pic2bim-building-attribute-extraction-exif"
+    },
+    {
+      "alias": "buildvoc-pic2bim-multi-view-map-orchestration",
+      "file": "03_multi_view_map_orchestration_.md",
+      "title": "Multi-View Map Orchestration",
+      "url": "http://192.168.1.142:8180/n/buildvoc-pic2bim-multi-view-map-orchestration"
+    },
+    {
+      "alias": "buildvoc-pic2bim-pmtiles-tiling-protocol",
+      "file": "04_pmtiles_tiling_protocol_.md",
+      "title": "PMTiles Tiling Protocol",
+      "url": "http://192.168.1.142:8180/n/buildvoc-pic2bim-pmtiles-tiling-protocol"
+    },
+    {
+      "alias": "buildvoc-pic2bim-deck-gl-overlay-management",
+      "file": "05_deck_gl_overlay_management_.md",
+      "title": "Deck.gl Overlay Management",
+      "url": "http://192.168.1.142:8180/n/buildvoc-pic2bim-deck-gl-overlay-management"
+    },
+    {
+      "alias": "buildvoc-pic2bim-progressive-data-streaming-sse",
+      "file": "06_progressive_data_streaming__sse__.md",
+      "title": "Progressive Data Streaming (SSE)",
+      "url": "http://192.168.1.142:8180/n/buildvoc-pic2bim-progressive-data-streaming-sse"
+    },
+    {
+      "alias": "buildvoc-pic2bim-spatial-data-filtering-processing",
+      "file": "07_spatial_data_filtering___processing_.md",
+      "title": "Spatial Data Filtering & Processing",
+      "url": "http://192.168.1.142:8180/n/buildvoc-pic2bim-spatial-data-filtering-processing"
+    },
+    {
+      "alias": "buildvoc-pic2bim-changelog",
+      "file": "CHANGELOG.md",
+      "title": "Change Log",
+      "url": "http://192.168.1.142:8180/n/buildvoc-pic2bim-changelog"
+    },
+    {
+      "alias": "buildvoc-pic2bim-index",
+      "file": "index.md",
+      "title": "PIC2BIM Specification Index",
+      "url": "http://192.168.1.142:8180/n/buildvoc-pic2bim-index"
+    }
+  ],
+  "generatedAt": "2026-10-03T15:26:07.327814+00:00",
+  "githubRepo": "buildvoc/PIC2BIM",
+  "namespace": "buildvoc/PIC2BIM",
+  "sourcePath": "/data/projects/pic2bim",
+  "version": 1
+}

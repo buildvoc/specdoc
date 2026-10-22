@@ -1,0 +1,84 @@
+{
+  "id": "musip0p4-c0b90db5",
+  "status": "done",
+  "progress": 100,
+  "phase": "done",
+  "detail": "Standard Refresh specs completed for 2 code paths. Only outputs written by these refresh runs were merged and published.",
+  "createdAt": "2026-10-03T14:58:53.512Z",
+  "updatedAt": "2026-10-03T15:58:11.005Z",
+  "title": "Merged Cross-Project Specification",
+  "alias": "merged-cross-project-specification",
+  "model": "gemma4:26b",
+  "projectCount": 2,
+  "projects": [
+    {
+      "namespace": "buildvoc/PIC2BIM",
+      "sourcePath": "/data/projects/pic2bim",
+      "outputDir": "/data/projects/specdoc/specifications/buildvoc/pic2bim"
+    },
+    {
+      "namespace": "buildvoc/PIC2BIMAndroid",
+      "sourcePath": "/data/projects/PIC2BIMAndroid",
+      "outputDir": "/data/projects/specdoc/specifications/buildvoc/pic2bimandroid"
+    }
+  ],
+  "generatedInputs": [
+    {
+      "namespace": "buildvoc/PIC2BIM",
+      "path": "01_unified_task___user_management__inertia_js__.md"
+    },
+    {
+      "namespace": "buildvoc/PIC2BIM",
+      "path": "02_building_attribute_extraction__exif__.md"
+    },
+    {
+      "namespace": "buildvoc/PIC2BIM",
+      "path": "03_multi_view_map_orchestration_.md"
+    },
+    {
+      "namespace": "buildvoc/PIC2BIM",
+      "path": "04_pmtiles_tiling_protocol_.md"
+    },
+    {
+      "namespace": "buildvoc/PIC2BIM",
+      "path": "05_deck_gl_overlay_management_.md"
+    },
+    {
+      "namespace": "buildvoc/PIC2BIM",
+      "path": "06_progressive_data_streaming__sse__.md"
+    },
+    {
+      "namespace": "buildvoc/PIC2BIM",
+      "path": "07_spatial_data_filtering___processing_.md"
+    },
+    {
+      "namespace": "buildvoc/PIC2BIMAndroid",
+      "path": "01_task_centric_domain_model_.md"
+    },
+    {
+      "namespace": "buildvoc/PIC2BIMAndroid",
+      "path": "02_path_tracking_system__ptservice__.md"
+    },
+    {
+      "namespace": "buildvoc/PIC2BIMAndroid",
+      "path": "03_tiered_location_sourcing_.md"
+    },
+    {
+      "namespace": "buildvoc/PIC2BIMAndroid",
+      "path": "04_ekf__extended_kalman_filter__engine_.md"
+    },
+    {
+      "namespace": "buildvoc/PIC2BIMAndroid",
+      "path": "05_persistence_layer__room_database__.md"
+    },
+    {
+      "namespace": "buildvoc/PIC2BIMAndroid",
+      "path": "06_syncqueue_orchestrator_.md"
+    }
+  ],
+  "generatedSpecCount": 13,
+  "mergeJobId": "muski2a4-69f1767a",
+  "url": "http://192.168.1.142:8180/n/merged-cross-project-specification",
+  "mergedAlias": "merged-cross-project-specification",
+  "completedAt": "2026-10-03T15:58:11.004Z"
+}

@@ -1,7 +1,35 @@
-node_modules/
-.claude/
-.calira/
-deploy/local/
-site/
+# Secrets
 .env
-.work/
+pocketflow/.env
+
+# Python runtime
+pocketflow/.venv/
+__pycache__/
+*.pyc
+
+# Node runtime
+node_modules/
+mcp/node_modules/
+
+# Runtime state/logs
+logs/
+pocketflow/logs/
+pocketflow/output/
+pocketflow/llm_cache.json
+*.log
+
+# Generated temporary candidates
+specifications/SpecDoc.next/
+
+# Local/editor backups
+*.bak
+*.before-*
+*~
+
+# Deployment artifacts
+*.zip
+*.patch
+SHA256SUMS
+
+specifications/.staging/
+projects/registry.json.tmp
