@@ -1438,13 +1438,13 @@ function send (res, status, type, body, extra = {}) {
 
 function staticFile (res, pathname) {
   const allowed = new Map([
-    ['/assets/ui.css', path.join(ROOT, 'spec-board', 'ui.css')],
-    ['/assets/board.css', path.join(ROOT, 'spec-board', 'board.css')]
+    ['/assets/ui.css', path.join(__dirname, 'assets', 'ui.css')],
+    ['/assets/board.css', path.join(__dirname, 'assets', 'board.css')]
   ])
   if (pathname.startsWith('/fonts/')) {
     const name = path.basename(pathname)
     if (!/^[A-Za-z0-9_.-]+$/.test(name)) return false
-    const file = path.join(ROOT, 'spec-board', 'fonts', name)
+    const file = path.join(__dirname, 'assets', 'fonts', name)
     if (!fs.existsSync(file)) return false
     return send(res, 200, 'font/woff2', fs.readFileSync(file), { 'cache-control': 'public, max-age=86400' }), true
   }

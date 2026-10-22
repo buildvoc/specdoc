@@ -31,5 +31,5 @@ specifications/SpecDoc.next/
 *.patch
 SHA256SUMS
 
-specifications/.staging/
+specifications/
 projects/registry.json.tmp

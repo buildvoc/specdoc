@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 ROOT = Path(os.environ.get('SPECDOC_ROOT', '/data/projects/specdoc')).resolve()
+SPEC_ROOT = Path(os.environ.get('SPECDOC_SPEC_ROOT', '/data/projects/specdoc-authoring/specifications')).resolve()
 PROJECTS = Path('/data/projects').resolve()
 
 def git(src, *args):
@@ -38,7 +39,7 @@ def resolve(source):
     return {
         'source': str(source), 'namespace': ns, 'owner': owner, 'repo': repo,
         'projectName': repo, 'projectKey': f'{owner_s}__{repo_s}', 'aliasPrefix': slug(prefix),
-        'outputDir': str(ROOT/'specifications'/owner_s/repo_s),
+        'outputDir': str(SPEC_ROOT/owner_s/repo_s),
         'registryFile': str(ROOT/'projects'/'registry.json'),
         'githubRepo': ns if 'github.com' in remote else '', 'remote': remote,
         'branch': git(source,'branch','--show-current'), 'commit': git(source,'rev-parse','HEAD')

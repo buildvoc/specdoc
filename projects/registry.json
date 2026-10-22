@@ -46,10 +46,10 @@
     },
     "buildvoc/hedgedoc": {
       "aliasPrefix": "buildvoc-hedgedoc",
-      "branch": "snapshot/memex-v6-20260920-084010",
-      "commit": "987270e653ba4ab9276be4b05d3ad9f17f211e63",
+      "branch": "staging",
+      "commit": "72876198471d7802a4ebe732d2837383e9e09bc6",
       "githubRepo": "buildvoc/hedgedoc",
-      "lastRefresh": "2026-09-29T09:03:52.501892+00:00",
+      "lastRefresh": "2026-10-22T08:37:10.942145+00:00",
       "namespace": "buildvoc/hedgedoc",
       "outputDir": "/data/projects/specdoc/specifications/buildvoc/hedgedoc",
       "remote": "https://github.com/buildvoc/hedgedoc.git",
@@ -76,6 +76,17 @@
       "outputDir": "/data/projects/specdoc/specifications/buildvoc/specdoc",
       "remote": "https://github.com/buildvoc/specdoc.git",
       "sourcePath": "/data/projects/specdoc"
+    },
+    "local/refresh-smoke": {
+      "aliasPrefix": "refresh-smoke",
+      "branch": "master",
+      "commit": "190dd757872c1449c5971b9d971453b219b594ef",
+      "githubRepo": null,
+      "lastRefresh": "2026-10-22T09:42:04.472324+00:00",
+      "namespace": "local/refresh-smoke",
+      "outputDir": "/data/projects/specdoc-authoring/specifications/local/refresh-smoke",
+      "remote": null,
+      "sourcePath": "/data/projects/specdoc-refresh-smoke"
     }
   },
   "version": 1

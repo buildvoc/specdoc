@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="${SPECDOC_ROOT:-/data/projects/specdoc}"
+SPEC_ROOT="${SPECDOC_SPEC_ROOT:-/data/projects/specdoc-authoring/specifications}"
+export SPECDOC_SPEC_ROOT="$SPEC_ROOT"
 ENGINE="$ROOT/pocketflow"
 SOURCE="${1:-$ROOT}"
 eval "$(python3 "$ROOT/specdoc-project.py" --source "$SOURCE" --format shell)"
 PY="$ENGINE/.venv/bin/python"; [ -x "$PY" ] || PY=python3
-mkdir -p "$ROOT/specifications/.staging" "$(dirname "$SPECDOC_SPEC_DIR")" "$ROOT/projects"
-STAGE_BASE="$ROOT/specifications/.staging/${SPECDOC_PROJECT_KEY}.$$"
+mkdir -p "$SPEC_ROOT/.staging" "$(dirname "$SPECDOC_SPEC_DIR")" "$ROOT/projects"
+STAGE_BASE="$SPEC_ROOT/.staging/${SPECDOC_PROJECT_KEY}.$$"
 OLD_DIR="${SPECDOC_SPEC_DIR}.previous.$$"
 mkdir -p "$STAGE_BASE"
 cleanup(){ rm -rf "$STAGE_BASE"; }

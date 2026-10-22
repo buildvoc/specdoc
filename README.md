@@ -14,7 +14,7 @@ Source repository
 ## Components
 
 - `pocketflow/` — specification generation
-- `specifications/` — generated specification corpus
+- `/data/projects/specdoc-authoring/specifications/` — generated specification corpus (outside the application repository)
 - `hd2-adapter/` — HedgeDoc 2 compatibility API
 - `hd2-board/` — SpecBoard web application
 - `publish-specs.sh` — publishes specifications to HedgeDoc
@@ -35,6 +35,14 @@ Run:
 `/data/projects/specdoc/refresh-specdoc.sh`
 
 SpecBoard can also trigger a refresh for a selected source path.
+
+Generated specifications default to:
+
+`/data/projects/specdoc-authoring/specifications/<owner>/<repo>/`
+
+Override the root with `SPECDOC_SPEC_ROOT`. HedgeDoc publication still uses
+`SPECDOC_SPEC_DIR`, so existing aliases are updated in place rather than creating
+a second set of notes.
 
 ## GitHub Issues
 
