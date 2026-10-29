@@ -68,12 +68,12 @@
     },
     "buildvoc/specdoc": {
       "aliasPrefix": "specdoc",
-      "branch": "hd2-compat",
-      "commit": "1bed98ab1cb30891d122fac4a12c3cacb7c61b4e",
+      "branch": "staging",
+      "commit": "89d130e3f1eac331babc084a9d236619600183c1",
       "githubRepo": "buildvoc/specdoc",
-      "lastRefresh": "2026-10-04T10:33:21.269526+00:00",
+      "lastRefresh": "2026-10-22T10:21:43.995964+00:00",
       "namespace": "buildvoc/specdoc",
-      "outputDir": "/data/projects/specdoc/specifications/buildvoc/specdoc",
+      "outputDir": "/data/projects/specdoc-authoring/specifications/buildvoc/specdoc",
       "remote": "https://github.com/buildvoc/specdoc.git",
       "sourcePath": "/data/projects/specdoc"
     },
